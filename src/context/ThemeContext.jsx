@@ -1,20 +1,64 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useRef } from 'react'
 
-const ThemeContext = createContext({ dark: true, toggle: () => {} })
+const ThemeContext = createContext({})
+
+export const THEMES = {
+  dark:     { label: 'Dark',     isDark: true,  swatch: '#1a1d27' },
+  light:    { label: 'Light',    isDark: false, swatch: '#f1f5f9' },
+  navy:     { label: 'Navy',     isDark: true,  swatch: '#0d1b2e' },
+  graphite: { label: 'Graphite', isDark: true,  swatch: '#1c1c1e' },
+}
+
+function applyTheme(name) {
+  const t = THEMES[name] ?? THEMES.dark
+  document.documentElement.setAttribute('data-theme', name)
+  document.documentElement.classList.toggle('dark', t.isDark)
+}
+
+async function fetchTheme() {
+  try {
+    const res = await fetch('/api/theme')
+    if (!res.ok) throw new Error()
+    const { theme } = await res.json()
+    return THEMES[theme] ? theme : 'dark'
+  } catch {
+    return 'dark'
+  }
+}
+
+async function persistTheme(name) {
+  try {
+    await fetch('/api/theme', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme: name }),
+    })
+  } catch {}
+}
 
 export function ThemeProvider({ children }) {
-  const [dark, setDark] = useState(() => {
-    const saved = localStorage.getItem('ctm-theme')
-    return saved !== null ? saved === 'dark' : true
-  })
+  const [theme, setThemeState] = useState('dark')
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark)
-    localStorage.setItem('ctm-theme', dark ? 'dark' : 'light')
-  }, [dark])
+    fetchTheme().then((name) => {
+      applyTheme(name)
+      setThemeState(name)
+    })
+  }, [])
+
+  function setTheme(name) {
+    if (!THEMES[name]) return
+    applyTheme(name)
+    setThemeState(name)
+    persistTheme(name)
+  }
+
+  // legacy: components that still destructure { dark, toggle }
+  const dark = THEMES[theme]?.isDark ?? true
+  const toggle = () => setTheme(dark ? 'light' : 'dark')
 
   return (
-    <ThemeContext.Provider value={{ dark, toggle: () => setDark((p) => !p) }}>
+    <ThemeContext.Provider value={{ theme, setTheme, dark, toggle }}>
       {children}
     </ThemeContext.Provider>
   )
@@ -22,27 +66,22 @@ export function ThemeProvider({ children }) {
 
 export const useTheme = () => useContext(ThemeContext)
 
-/** Returns theme-aware Tailwind class strings */
+/** Returns theme-aware class strings backed by CSS custom properties */
 export function useT() {
-  const { dark } = useTheme()
   return {
-    // Backgrounds
-    pageBg:    dark ? 'bg-[#0f1117]'   : 'bg-slate-100',
-    card:      dark ? 'bg-[#1a1d27]'   : 'bg-white',
-    cardHover: dark ? 'hover:bg-[#1f2233]' : 'hover:bg-slate-50',
-    inner:     dark ? 'bg-[#161926]'   : 'bg-slate-50',
-    tableHead: dark ? 'bg-[#1f2233]'   : 'bg-slate-100',
-    inputBg:   dark ? 'bg-[#161926]'   : 'bg-white',
-    // Borders
-    border:    dark ? 'border-[#2a2d3a]' : 'border-slate-200',
-    borderDash:dark ? 'border-slate-700' : 'border-slate-300',
-    // Text
-    text:      dark ? 'text-white'      : 'text-slate-900',
-    textSub:   dark ? 'text-slate-300'  : 'text-slate-700',
-    textMuted: dark ? 'text-slate-400'  : 'text-slate-500',
-    textFaint: dark ? 'text-slate-500'  : 'text-slate-400',
-    textCode:  dark ? 'text-slate-400'  : 'text-slate-600',
-    // Header
-    header:    dark ? 'bg-[#1a1d27] border-[#2a2d3a]' : 'bg-white border-slate-200',
+    pageBg:     'bg-[var(--pageBg)]',
+    card:       'bg-[var(--card)]',
+    cardHover:  'hover:bg-[var(--cardHover)]',
+    inner:      'bg-[var(--inner)]',
+    tableHead:  'bg-[var(--tableHead)]',
+    inputBg:    'bg-[var(--inputBg)]',
+    border:     'border-[var(--border)]',
+    borderDash: 'border-[var(--borderDash)]',
+    text:       'text-[var(--text)]',
+    textSub:    'text-[var(--textSub)]',
+    textMuted:  'text-[var(--textMuted)]',
+    textFaint:  'text-[var(--textFaint)]',
+    textCode:   'text-[var(--textCode)]',
+    header:     'bg-[var(--card)] border-[var(--border)]',
   }
 }

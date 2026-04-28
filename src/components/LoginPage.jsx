@@ -1,10 +1,15 @@
 import { useState } from 'react'
 import { Shield, Eye, EyeOff, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
-import { useTheme, useT } from '../context/ThemeContext'
+import { useTheme, useT, THEMES } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
 
 export default function LoginPage({ onLogin }) {
-  const { dark, toggle } = useTheme()
+  const { theme, setTheme } = useTheme()
+  const themeKeys = Object.keys(THEMES)
+  function cycleTheme() {
+    const next = themeKeys[(themeKeys.indexOf(theme) + 1) % themeKeys.length]
+    setTheme(next)
+  }
   const t = useT()
   const { settings } = useSettings()
 
@@ -23,9 +28,8 @@ export default function LoginPage({ onLogin }) {
     setLoading(true)
     setError(null)
 
-    const ctmBase = import.meta.env.VITE_CTM_API_URL || '/ctm-api'
     try {
-      const res = await fetch(`${ctmBase}/run/jobs/status?limit=1`, {
+      const res = await fetch(`/ctm-api/run/jobs/status?limit=1`, {
         headers: { 'x-api-key': apiKey.trim() },
       })
       if (!res.ok) {
@@ -46,10 +50,14 @@ export default function LoginPage({ onLogin }) {
       {/* Theme toggle */}
       <div className="absolute top-4 right-4">
         <button
-          onClick={toggle}
-          className={`p-2 rounded-lg border text-xs ${t.card} ${t.border} ${t.textMuted} hover:opacity-80`}
+          onClick={cycleTheme}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs ${t.card} ${t.border} ${t.textMuted} hover:opacity-80`}
         >
-          {dark ? '☀ Light' : '🌙 Dark'}
+          <span
+            className="w-3 h-3 rounded-full border border-white/20"
+            style={{ background: THEMES[theme].swatch }}
+          />
+          {THEMES[theme].label}
         </button>
       </div>
 

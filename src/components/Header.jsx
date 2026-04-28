@@ -1,19 +1,26 @@
-import { RefreshCw, Shield, Clock, Sun, Moon, FileSpreadsheet, Settings, Network } from 'lucide-react'
-import { useTheme, useT } from '../context/ThemeContext'
+import { RefreshCw, Shield, Clock, Palette, FileSpreadsheet, Settings, Network } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { useTheme, useT, THEMES } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
 
-const IS_MOCK      = import.meta.env.VITE_USE_MOCK === 'true'
-const CTM_HOST     = (() => {
-  try { return new URL(import.meta.env.VITE_CTM_PROXY_TARGET || '').hostname } catch { return 'CTM SaaS' }
-})()
+const IS_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 export default function Header({
   lastRefresh, autoRefresh, onToggleAuto,
   onRefresh, loading, onLogout, onReport, hasData, onSettings, onTopology,
-  showTopology = true,
 }) {
-  const { dark, toggle } = useTheme()
+  const { theme, setTheme } = useTheme()
   const t = useT()
+  const [themeOpen, setThemeOpen] = useState(false)
+  const themeRef = useRef(null)
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (themeRef.current && !themeRef.current.contains(e.target)) setThemeOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
   const { settings, fmtTime } = useSettings()
 
   const dashboardTitle = settings.customerName?.trim() || 'Resiliency Dashboard'
@@ -62,7 +69,7 @@ export default function Header({
           ) : (
             <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-green-500/10 border border-green-500/30 text-green-400">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              Live — {CTM_HOST}
+              Live — se-preprod SaaS
             </span>
           )}
 
@@ -80,7 +87,7 @@ export default function Header({
             <button
               onClick={onToggleAuto}
               className={`relative inline-flex h-5 w-9 rounded-full transition-colors duration-200 focus:outline-none ${
-                autoRefresh ? 'bg-blue-600' : dark ? 'bg-slate-700' : 'bg-slate-300'
+                autoRefresh ? 'bg-blue-600' : 'bg-[var(--border)]'
               }`}
             >
               <span
@@ -91,26 +98,44 @@ export default function Header({
             </button>
           </label>
 
-          {/* Dark / Light toggle */}
-          <button
-            onClick={toggle}
-            title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-            className={`p-1.5 rounded-lg border transition-colors ${t.card} ${t.border} ${t.textMuted} hover:opacity-80`}
-          >
-            {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
+          {/* Theme picker */}
+          <div ref={themeRef} className="relative">
+            <button
+              onClick={() => setThemeOpen((p) => !p)}
+              title="Change theme"
+              className={`p-1.5 rounded-lg border transition-colors ${t.card} ${t.border} ${t.textMuted} hover:opacity-80`}
+            >
+              <Palette className="w-4 h-4" />
+            </button>
+            {themeOpen && (
+              <div className={`absolute right-0 top-9 z-50 w-36 rounded-xl border shadow-xl overflow-hidden ${t.card} ${t.border}`}>
+                {Object.entries(THEMES).map(([key, { label, swatch }]) => (
+                  <button
+                    key={key}
+                    onClick={() => { setTheme(key); setThemeOpen(false) }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition-colors ${t.textMuted} ${t.cardHover} ${theme === key ? 'font-semibold ' + t.text : ''}`}
+                  >
+                    <span
+                      className="w-3.5 h-3.5 rounded-full border border-white/20 flex-shrink-0"
+                      style={{ background: swatch }}
+                    />
+                    {label}
+                    {theme === key && <span className="ml-auto text-blue-400">✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Agent Topology (NOC View) */}
-          {showTopology && (
-            <button
-              onClick={onTopology}
-              title="Agent Topology — NOC View"
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${t.card} ${t.border} ${t.textMuted} hover:opacity-80`}
-            >
-              <Network className="w-4 h-4" />
-              <span className="hidden sm:inline">Topology</span>
-            </button>
-          )}
+          <button
+            onClick={onTopology}
+            title="Agent Topology — NOC View"
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${t.card} ${t.border} ${t.textMuted} hover:opacity-80`}
+          >
+            <Network className="w-4 h-4" />
+            <span className="hidden sm:inline">Topology</span>
+          </button>
 
           {/* Settings */}
           <button

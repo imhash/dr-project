@@ -11,26 +11,87 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-/* Dark mode body */
-html.dark body {
-  background-color: #0f1117;
-  color: #e2e8f0;
+/* ─────────────────────────────────────────
+   Theme palettes via CSS custom properties
+   ───────────────────────────────────────── */
+
+/* Dark (default) */
+:root,
+[data-theme="dark"] {
+  --pageBg:     #0f1117;
+  --card:       #1a1d27;
+  --cardHover:  #1f2233;
+  --inner:      #161926;
+  --tableHead:  #1f2233;
+  --inputBg:    #161926;
+  --border:     #2a2d3a;
+  --borderDash: #475569;
+  --text:       #ffffff;
+  --textSub:    #cbd5e1;
+  --textMuted:  #94a3b8;
+  --textFaint:  #64748b;
+  --textCode:   #94a3b8;
 }
 
-/* Light mode body */
-html:not(.dark) body {
-  background-color: #f1f5f9;
-  color: #0f172a;
+/* Light */
+[data-theme="light"] {
+  --pageBg:     #f1f5f9;
+  --card:       #ffffff;
+  --cardHover:  #f8fafc;
+  --inner:      #f8fafc;
+  --tableHead:  #f1f5f9;
+  --inputBg:    #ffffff;
+  --border:     #e2e8f0;
+  --borderDash: #cbd5e1;
+  --text:       #0f172a;
+  --textSub:    #334155;
+  --textMuted:  #64748b;
+  --textFaint:  #94a3b8;
+  --textCode:   #475569;
 }
 
-/* ── Scrollbar (dark) ── */
-html.dark ::-webkit-scrollbar          { width: 6px; height: 6px; }
-html.dark ::-webkit-scrollbar-track    { background: #1a1d27; }
-html.dark ::-webkit-scrollbar-thumb    { background: #3a3d4a; border-radius: 3px; }
-html.dark ::-webkit-scrollbar-thumb:hover { background: #4a4d5a; }
+/* Navy — corporate deep blue */
+[data-theme="navy"] {
+  --pageBg:     #070d1a;
+  --card:       #0d1b2e;
+  --cardHover:  #112240;
+  --inner:      #0a1628;
+  --tableHead:  #112240;
+  --inputBg:    #0a1628;
+  --border:     #1e3a5f;
+  --borderDash: #2d5a8e;
+  --text:       #e8f0fe;
+  --textSub:    #a8c4e0;
+  --textMuted:  #7ba3c8;
+  --textFaint:  #4a7fa8;
+  --textCode:   #7ba3c8;
+}
 
-/* ── Scrollbar (light) ── */
-html:not(.dark) ::-webkit-scrollbar       { width: 6px; height: 6px; }
-html:not(.dark) ::-webkit-scrollbar-track { background: #e2e8f0; }
-html:not(.dark) ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
-html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+/* Graphite — warm Apple-style dark */
+[data-theme="graphite"] {
+  --pageBg:     #161618;
+  --card:       #1c1c1e;
+  --cardHover:  #2c2c2e;
+  --inner:      #1c1c1e;
+  --tableHead:  #2c2c2e;
+  --inputBg:    #1c1c1e;
+  --border:     #3a3a3c;
+  --borderDash: #48484a;
+  --text:       #f5f5f7;
+  --textSub:    #d1d1d6;
+  --textMuted:  #aeaeb2;
+  --textFaint:  #8e8e93;
+  --textCode:   #aeaeb2;
+}
+
+/* ── Body background follows theme ── */
+body {
+  background-color: var(--pageBg);
+  color: var(--text);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar          { width: 6px; height: 6px; }
+::-webkit-scrollbar-track    { background: var(--inner); }
+::-webkit-scrollbar-thumb    { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--borderDash); }
