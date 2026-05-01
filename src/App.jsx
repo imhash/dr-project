@@ -9,11 +9,14 @@ import ServiceConfigPage from './pages/ServiceConfigPage'
 import LoginPage         from './components/LoginPage'
 import DrillReportModal  from './components/DrillReportModal'
 import SettingsPanel     from './components/SettingsPanel'
+import TVView            from './components/TVView'
+import TimelineFilter, { matchesFilter } from './components/TimelineFilter'
 import { useT }          from './context/ThemeContext'
 import { useSettings }   from './context/SettingsContext'
 import { fetchDROperations, fetchAgents, setApiKey } from './services/controlmApi'
+import { getConfig }     from './config'
 
-const REFRESH_MS  = 30_000
+const REFRESH_MS  = () => getConfig().refreshIntervalMs || 30_000
 const SESSION_KEY = 'ctm-session'
 
 // Views: 'dashboard' | 'topology' | 'service-config'
@@ -28,15 +31,18 @@ function Dashboard({ onLogout }) {
   const [lastRefresh,  setLastRefresh]  = useState(null)
   const [autoRefresh,  setAutoRefresh]  = useState(true)
   const [error,        setError]        = useState(null)
-  const [showReport,   setShowReport]   = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
+  const [showReport,     setShowReport]   = useState(false)
+  const [showSettings,   setShowSettings] = useState(false)
+  const [showTV,         setShowTV]       = useState(false)
+  const [timelineFilter, setTimelineFilter] = useState(null)
+  const [forceExpanded,  setForceExpanded]  = useState(undefined)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const [ops, agt] = await Promise.all([
-        fetchDROperations(settings.sla, settings.ctmServer || ''),
+        fetchDROperations(settings.sla, settings.ctmServer || getConfig().ctmServer || ''),
         fetchAgents(),
       ])
       setOperations(ops)
@@ -54,12 +60,14 @@ function Dashboard({ onLogout }) {
 
   useEffect(() => {
     if (!autoRefresh) return
-    const id = setInterval(loadAll, REFRESH_MS)
+    const id = setInterval(loadAll, REFRESH_MS())
     return () => clearInterval(id)
   }, [autoRefresh, loadAll])
 
+  const filteredOps = operations.filter((op) => matchesFilter(op, timelineFilter))
+
   const pinnedApps = settings.pinnedApps || []
-  const sortedOps  = [...operations].sort((a, b) => {
+  const sortedOps  = [...filteredOps].sort((a, b) => {
     const ai = pinnedApps.indexOf(a.app)
     const bi = pinnedApps.indexOf(b.app)
     if (ai !== -1 && bi !== -1) return ai - bi
@@ -100,6 +108,9 @@ function Dashboard({ onLogout }) {
       {showSettings && (
         <SettingsPanel appNames={appNames} onClose={() => setShowSettings(false)} />
       )}
+      {showTV && (
+        <TVView operations={sortedOps} onClose={() => setShowTV(false)} timelineFilter={timelineFilter} />
+      )}
 
       <Header
         lastRefresh={lastRefresh}
@@ -111,6 +122,7 @@ function Dashboard({ onLogout }) {
         onReport={() => setShowReport(true)}
         onSettings={() => setShowSettings(true)}
         onTopology={() => setActiveView('topology')}
+        onTVView={() => setShowTV(true)}
         hasData={operations.length > 0}
         showTopology={settings.visibility?.topology !== false}
       />
@@ -130,7 +142,7 @@ function Dashboard({ onLogout }) {
         </div>
       ) : (
         <main className="flex-1 overflow-auto">
-          <SummaryCards operations={operations} />
+          <SummaryCards operations={filteredOps} />
 
           <section className="px-6 pb-4">
             <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -143,6 +155,35 @@ function Dashboard({ onLogout }) {
                   {pinnedApps.length} pinned
                 </span>
               )}
+              <div className="ml-auto flex items-center gap-2">
+                {sortedOps.length > 0 && (
+                  <div className={`flex items-center rounded-lg border overflow-hidden ${t.border}`}>
+                    <button
+                      onClick={() => setForceExpanded(true)}
+                      className={`text-xs px-2.5 py-1.5 transition-colors ${t.textMuted} ${t.cardHover}`}
+                      title="Expand all cards"
+                    >
+                      Expand all
+                    </button>
+                    <div className={`w-px h-4 ${t.border} bg-current opacity-20`} />
+                    <button
+                      onClick={() => setForceExpanded(false)}
+                      className={`text-xs px-2.5 py-1.5 transition-colors ${t.textMuted} ${t.cardHover}`}
+                      title="Collapse all cards"
+                    >
+                      Collapse all
+                    </button>
+                  </div>
+                )}
+                {settings.visibility?.timelineFilter !== false && (
+                  <TimelineFilter
+                    filter={timelineFilter}
+                    onChange={setTimelineFilter}
+                    totalCount={operations.length}
+                    filteredCount={filteredOps.length}
+                  />
+                )}
+              </div>
             </div>
             {sortedOps.length === 0 ? (
               <div className={`text-center py-16 text-sm ${t.textMuted}`}>
@@ -153,14 +194,14 @@ function Dashboard({ onLogout }) {
               </div>
             ) : (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                {sortedOps.map((op) => <AppDRCard key={op.app} operation={op} />)}
+                {sortedOps.map((op) => <AppDRCard key={op.app} operation={op} forceExpanded={forceExpanded} />)}
               </div>
             )}
           </section>
 
-          {operations.length > 0 && (
+          {filteredOps.length > 0 && (
             <section className="px-6 pb-4">
-              <RTOValidation operations={operations} />
+              <RTOValidation operations={filteredOps} />
             </section>
           )}
 

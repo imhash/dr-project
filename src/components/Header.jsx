@@ -1,13 +1,12 @@
-import { RefreshCw, Shield, Clock, Palette, FileSpreadsheet, Settings, Network } from 'lucide-react'
+import { RefreshCw, Shield, Clock, Palette, FileSpreadsheet, Settings, Network, Tv2 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { useTheme, useT, THEMES } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
-
-const IS_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
+import { getConfig } from '../config'
 
 export default function Header({
   lastRefresh, autoRefresh, onToggleAuto,
-  onRefresh, loading, onLogout, onReport, hasData, onSettings, onTopology,
+  onRefresh, loading, onLogout, onReport, hasData, onSettings, onTopology, onTVView, showTopology,
 }) {
   const { theme, setTheme } = useTheme()
   const t = useT()
@@ -61,7 +60,7 @@ export default function Header({
         <div className="flex items-center gap-3 flex-wrap">
 
           {/* Connection badge */}
-          {IS_MOCK ? (
+          {getConfig().useMock ? (
             <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
               Mock Data
@@ -69,7 +68,7 @@ export default function Header({
           ) : (
             <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-green-500/10 border border-green-500/30 text-green-400">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              Live — se-preprod SaaS
+              {getConfig().environmentLabel || 'Live'}
             </span>
           )}
 
@@ -127,15 +126,29 @@ export default function Header({
             )}
           </div>
 
+          {/* TV View */}
+          {hasData && (
+            <button
+              onClick={onTVView}
+              title="TV View — minimal fullscreen tile display"
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${t.card} ${t.border} ${t.textMuted} hover:opacity-80`}
+            >
+              <Tv2 className="w-4 h-4" />
+              <span className="hidden sm:inline">TV</span>
+            </button>
+          )}
+
           {/* Agent Topology (NOC View) */}
-          <button
-            onClick={onTopology}
-            title="Agent Topology — NOC View"
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${t.card} ${t.border} ${t.textMuted} hover:opacity-80`}
-          >
-            <Network className="w-4 h-4" />
-            <span className="hidden sm:inline">Topology</span>
-          </button>
+          {showTopology !== false && (
+            <button
+              onClick={onTopology}
+              title="Agent Topology — NOC View"
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${t.card} ${t.border} ${t.textMuted} hover:opacity-80`}
+            >
+              <Network className="w-4 h-4" />
+              <span className="hidden sm:inline">Topology</span>
+            </button>
+          )}
 
           {/* Settings */}
           <button

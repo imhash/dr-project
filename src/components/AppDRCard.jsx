@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react'
 import {
   CheckCircle2, XCircle, AlertTriangle, Zap, Pin, PinOff,
   ArrowRightLeft, ArrowLeftRight, ShieldCheck, ArrowDown, ArrowUp,
-  ChevronDown, ChevronUp, List,
+  ChevronDown, ChevronUp, List, FileText,
 } from 'lucide-react'
 import { useT } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
 import PhaseStepReport from './PhaseStepReport'
+import AppReportModal from './AppReportModal'
 
 // ─── Colour helpers ───────────────────────────────────────────────────────────
 
@@ -259,7 +260,7 @@ function PhaseDot({ phase, data }) {
 // Phase keys in display order
 const ALL_PHASES = ['switchover', 'switchback', 'readiness', 'failover', 'failback']
 
-export default function AppDRCard({ operation }) {
+export default function AppDRCard({ operation, forceExpanded }) {
   const t = useT()
   const { settings, togglePin } = useSettings()
   const {
@@ -267,8 +268,13 @@ export default function AppDRCard({ operation }) {
     overallStatus, drillHealth, completionPct,
   } = operation
 
-  const [expanded,     setExpanded]     = useState(true)
-  const [stepPhase,    setStepPhase]    = useState(null)   // which phase's modal is open
+  const [expanded,       setExpanded]       = useState(true)
+  const [stepPhase,      setStepPhase]      = useState(null)
+  const [showAppReport,  setShowAppReport]  = useState(false)
+
+  useEffect(() => {
+    if (forceExpanded !== undefined) setExpanded(forceExpanded)
+  }, [forceExpanded])
 
   const badge    = headerBadgeClass(overallStatus, drillHealth)
   const isPinned = settings.pinnedApps?.includes(app)
@@ -299,19 +305,26 @@ export default function AppDRCard({ operation }) {
         />
       )}
 
+      {/* Per-app report modal */}
+      {showAppReport && (
+        <AppReportModal operation={operation} onClose={() => setShowAppReport(false)} />
+      )}
+
       <div className={`${t.card} border ${t.border} rounded-xl overflow-hidden ${isPinned ? 'ring-1 ring-blue-500/40' : ''}`}>
         {isPinned && <div className="h-0.5 bg-gradient-to-r from-blue-600 via-blue-400 to-transparent" />}
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4">
           <button onClick={() => setExpanded((p) => !p)} className="flex items-center gap-3 flex-1 text-left">
-            <div className={`w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${
+            <div className={`relative w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0 ${
               isPinned ? 'bg-blue-600/30 border-blue-500/40' : 'bg-blue-600/20 border-blue-500/30'
             }`}>
-              {isPinned
-                ? <Pin className="w-3.5 h-3.5 text-blue-400" />
-                : <span className="text-xs font-bold text-blue-400">{app.slice(0, 2).toUpperCase()}</span>
-              }
+              <span className="text-xs font-bold text-blue-400">{app.slice(0, 2).toUpperCase()}</span>
+              {isPinned && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full flex items-center justify-center">
+                  <Pin className="w-1.5 h-1.5 text-white" />
+                </span>
+              )}
             </div>
             <div className="text-left">
               <p className={`text-sm font-semibold ${t.text}`}>{app}</p>
@@ -330,6 +343,16 @@ export default function AppDRCard({ operation }) {
               {drillHealth}
             </span>
             <span className={`text-xs font-mono ${t.textMuted}`}>{completedPhases}/{totalPhases}</span>
+
+            {/* App report */}
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowAppReport(true) }}
+              title="View application report"
+              className={`flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors ${t.border} ${t.textMuted} hover:opacity-80`}
+            >
+              <FileText className="w-3 h-3" />
+              Report
+            </button>
 
             {/* Pin toggle */}
             <button

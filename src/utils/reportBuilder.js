@@ -28,6 +28,8 @@ function fmtDuration(mins) {
   return m === 0 ? `${h} Hr` : `${h} Hr ${m} Min`
 }
 
+import { getAppMeta } from '../config'
+
 // Infer criticality from RTO target:
 //   ≤15 min → Critical, ≤30 → High, ≤60 → Medium, else → Low
 function inferCriticality(rtoMins) {
@@ -36,6 +38,13 @@ function inferCriticality(rtoMins) {
   if (rtoMins <= 30) return 'High'
   if (rtoMins <= 60) return 'Medium'
   return 'Low'
+}
+
+function resolveCriticality(appMeta, hasSLA, rtoMins) {
+  if (!hasSLA) return ''
+  const c = appMeta.criticality
+  if (!c || c === 'inferred') return inferCriticality(rtoMins)
+  return c
 }
 
 // Derive downtime = how long the phase was actually running (elapsed)
@@ -76,6 +85,7 @@ export function buildReportRows(operations) {
 
       const downtime = downtimeRange(ph)
       const hasSLA   = ph.hasSLA === true   // false for Readiness
+      const appMeta  = getAppMeta(op.app, key)
 
       // RTO columns — only populated for SLA phases
       const rtoH   = hasSLA && ph.rtoTargetMins ? Math.floor(ph.rtoTargetMins / 60) : null
@@ -101,9 +111,9 @@ export function buildReportRows(operations) {
       rows.push({
         '#':                                    seq++,
         'Application Name':                     op.app,
-        'Criticality':                          hasSLA ? inferCriticality(ph.rtoTargetMins) : '',
-        'Application Type':                     'Internal',
-        'Service Impact':                       key === 'readiness' ? 'Read Only' : 'Full Outage',
+        'Criticality':                          resolveCriticality(appMeta, hasSLA, ph.rtoTargetMins),
+        'Application Type':                     appMeta.applicationType,
+        'Service Impact':                       appMeta.serviceImpact,
         'If "Others" — Please Specify':         '',
         'Dependency on Another System':         '',
         'Interdependent Systems':               '',

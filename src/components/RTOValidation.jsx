@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { BarChart2, CheckCircle2, XCircle, AlertTriangle, Clock, ShieldCheck } from 'lucide-react'
+import { BarChart2, CheckCircle2, XCircle, AlertTriangle, Clock, EyeOff, Eye } from 'lucide-react'
 import { useT } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
 
@@ -151,6 +151,7 @@ function SummaryStrip({ rows }) {
 
 export default function RTOValidation({ operations }) {
   const t = useT()
+  const [hideEmpty, setHideEmpty] = useState(true)
   if (!operations?.length) return null
 
   // ── Readiness is EXCLUDED — only SLA phases have RTO rows ──
@@ -160,6 +161,8 @@ export default function RTOValidation({ operations }) {
   )
 
   const configuredRows = rows.filter((r) => r.data)
+  const visibleRows    = hideEmpty ? configuredRows : rows
+  const hiddenCount    = rows.length - configuredRows.length
 
   return (
     <div className={`${t.card} border ${t.border} rounded-xl p-5 flex flex-col gap-4`}>
@@ -176,7 +179,22 @@ export default function RTOValidation({ operations }) {
             Fixed SLA deadline vs actual elapsed time — Readiness has no SLA target
           </p> */}
         </div>
-        <SummaryStrip rows={configuredRows} />
+        <div className="flex items-center gap-3 flex-wrap">
+          <SummaryStrip rows={configuredRows} />
+          {hiddenCount > 0 && (
+            <button
+              onClick={() => setHideEmpty((p) => !p)}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                hideEmpty
+                  ? `bg-blue-600/10 border-blue-500/30 text-blue-500`
+                  : `border-[var(--border)] ${t.textFaint} hover:${t.textMuted}`
+              }`}
+            >
+              {hideEmpty ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+              {hideEmpty ? `Show ${hiddenCount} unconfigured` : `Hide ${hiddenCount} unconfigured`}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Phase colour legend */}
@@ -216,7 +234,7 @@ export default function RTOValidation({ operations }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ app, phase, data }) => (
+            {visibleRows.map(({ app, phase, data }) => (
               <RtoRow key={`${app}-${phase}`} app={app} phase={phase} data={data} />
             ))}
           </tbody>

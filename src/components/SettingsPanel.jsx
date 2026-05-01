@@ -473,6 +473,21 @@ function VisibilitySection({ settings, save }) {
         </div>
         <div className="flex items-center justify-between px-3 py-2.5">
           <div className="flex items-center gap-2">
+            <Clock className={`w-3.5 h-3.5 ${vis.timelineFilter !== false ? 'text-blue-400' : t.textFaint}`} />
+            <div>
+              <span className={`text-xs font-medium ${vis.timelineFilter !== false ? t.text : t.textFaint}`}>Timeline Filter</span>
+              <p className={`text-xs ${t.textFaint}`}>Date / window filter above app cards</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs ${vis.timelineFilter !== false ? 'text-green-400' : t.textFaint}`}>
+              {vis.timelineFilter !== false ? 'Visible' : 'Hidden'}
+            </span>
+            <Toggle value={vis.timelineFilter !== false} onChange={(v) => setSection('timelineFilter', v)} />
+          </div>
+        </div>
+        <div className="flex items-center justify-between px-3 py-2.5">
+          <div className="flex items-center gap-2">
             <Wifi className={`w-3.5 h-3.5 ${vis.agentConnectivity !== false ? 'text-blue-400' : t.textFaint}`} />
             <div>
               <span className={`text-xs font-medium ${vis.agentConnectivity !== false ? t.text : t.textFaint}`}>Agent Connectivity</span>

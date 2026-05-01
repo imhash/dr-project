@@ -25,16 +25,16 @@ import {
   mockAgents,
 } from '../data/mockData'
 
-const BASE_URL     = import.meta.env.VITE_CTM_API_URL  || '/ctm-api'
-const USE_MOCK     = import.meta.env.VITE_USE_MOCK     === 'true'
-/** Default CTM server name from env — can be overridden per-call via the server param */
-const DEFAULT_SERVER = import.meta.env.VITE_CTM_SERVER || ''
+import { getConfig } from '../config'
 
-/**
- * Runtime API key — set via setApiKey() after login.
- * Falls back to the env variable so dev/mock flows still work without logging in.
- */
-let _apiKey = import.meta.env.VITE_CTM_API_KEY || ''
+// Resolved lazily so config.json is always read after loadConfig() in main.jsx
+function cfg() { return getConfig() }
+
+const BASE_URL       = () => cfg().ctmApiBase    || '/ctm-api'
+const USE_MOCK       = () => cfg().useMock        === true
+const DEFAULT_SERVER = () => cfg().ctmServer      || ''
+
+let _apiKey = ''
 
 /** Call this once after the user authenticates to wire up the key for all API calls. */
 export function setApiKey(key) {
@@ -44,7 +44,7 @@ export function setApiKey(key) {
 // ---------- Core fetch ----------
 
 async function ctmFetch(path, opts = {}) {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetch(`${BASE_URL()}${path}`, {
     ...opts,
     headers: {
       'x-api-key': _apiKey,
@@ -77,7 +77,7 @@ function buildJobsQuery(limit = 1000, server = '') {
 
 // ---------- Time helpers ----------
 
-/** Control-M timestamps: "yyyyMMddHHmmss" → Date */
+/** Control-M timestamps: "yyyyMMddHHmmss" → Date (treated as local browser time) */
 export function parseCtmTime(ts) {
   if (!ts || ts.length < 8) return null
   const y  = parseInt(ts.slice(0, 4),  10)
@@ -130,15 +130,18 @@ function buildStep(raw) {
   }
 
   return {
-    jobId:        raw.jobId,
-    name:         raw.name,
-    folder:       raw.folder,
-    status:       raw.status,
-    held:         raw.held  || null,
-    startTimeISO: start ? start.toISOString() : null,
-    endTimeISO:   end   ? end.toISOString()   : null,
-    elapsedMins:  elapsed,
-    logURI:       raw.logURI || null,
+    jobId:          raw.jobId,
+    name:           raw.name,
+    description:    raw.description   || null,
+    application:    raw.application   || null,
+    subApplication: raw.subApplication || null,
+    folder:         raw.folder,
+    status:         raw.status,
+    held:           raw.held  || null,
+    startTimeISO:   start ? start.toISOString() : null,
+    endTimeISO:     end   ? end.toISOString()   : null,
+    elapsedMins:    elapsed,
+    logURI:         raw.logURI || null,
     errorDetail,
   }
 }
@@ -269,33 +272,35 @@ function buildPhaseFromJobs(jobs, phase, slaTargetMins) {
 const DR_PHASES = new Set(['switchover', 'switchback', 'readiness', 'failover', 'failback'])
 
 const EMPTY_BY_PHASE = () => ({
-  switchover: { folder: null, steps: [] },
-  switchback: { folder: null, steps: [] },
-  readiness:  { folder: null, steps: [] },
-  failover:   { folder: null, steps: [] },
-  failback:   { folder: null, steps: [] },
+  switchover: { folder: null, steps: [], folderEntries: [] },
+  switchback: { folder: null, steps: [], folderEntries: [] },
+  readiness:  { folder: null, steps: [], folderEntries: [] },
+  failover:   { folder: null, steps: [], folderEntries: [] },
+  failback:   { folder: null, steps: [], folderEntries: [] },
 })
 
 /**
- * BFS traversal: collect ALL executable leaf jobs inside a CTM folder.
+ * BFS traversal: collect all executable leaf jobs + folder entries inside a CTM folder.
  *
  * CTM folder hierarchy can be many levels deep:
  *   DR Folder (subApplication=Switchover)
- *     └─ Sub-folder (e.g. mha-AI-Vsphere-SRM-Test)
- *          └─ Actual job
+ *     └─ Sub-folder (e.g. mha-prod-webapp-sb)   ← folderEntry
+ *          └─ Actual job                          ← leafJob
  *
- * The full status list is a flat array where each entry has a `folder` field
- * pointing to its direct parent. We BFS from `rootFolderName` collecting only
- * leaf-level executable jobs.
+ * Folder detection uses TWO criteria (either is sufficient):
+ *   1. isExecutableJob() returns false (type-based)
+ *   2. The entry has children in childrenByFolder (structural — catches entries
+ *      with missing/unknown type that still parent other jobs)
  *
- * @param {Map<string, Array>} childrenByFolder  - pre-built: folderName → [children]
+ * @param {Map<string, Array>} childrenByFolder
  * @param {string}             rootFolderName
- * @returns {Array} executable job raw objects
+ * @returns {{ leafJobs: Array, folderEntries: Array }}
  */
 function collectLeafJobs(childrenByFolder, rootFolderName) {
-  const result  = []
-  const queue   = [rootFolderName]
-  const visited = new Set()
+  const leafJobs      = []
+  const folderEntries = []
+  const queue         = [rootFolderName]
+  const visited       = new Set()
 
   while (queue.length > 0) {
     const name = queue.shift()
@@ -304,16 +309,19 @@ function collectLeafJobs(childrenByFolder, rootFolderName) {
 
     const children = childrenByFolder.get(name) || []
     for (const child of children) {
-      if (isExecutableJob(child)) {
-        result.push(child)
-      } else {
-        // Sub-folder: recurse into it
+      const hasChildren = (childrenByFolder.get(child.name) || []).length > 0
+      const isFolder    = !isExecutableJob(child) || hasChildren
+
+      if (isFolder) {
+        folderEntries.push(child)
         queue.push(child.name)
+      } else {
+        leafJobs.push(child)
       }
     }
   }
 
-  return result
+  return { leafJobs, folderEntries }
 }
 
 /**
@@ -358,9 +366,10 @@ function rawJobsToDROperations(statuses, slaConfig = {}) {
       byApp[app][phase].folder = folderEntry
     }
 
-    // BFS from this folder to collect all leaf executable jobs
-    const leafJobs = collectLeafJobs(childrenByFolder, folderEntry.name)
+    // BFS from this folder to collect leaf executable jobs + intermediate folder entries
+    const { leafJobs, folderEntries } = collectLeafJobs(childrenByFolder, folderEntry.name)
     byApp[app][phase].steps.push(...leafJobs)
+    byApp[app][phase].folderEntries.push(...folderEntries)
   }
 
   // Process direct (non-folder) DR jobs — add as steps if not already collected
@@ -394,12 +403,18 @@ function rawJobsToDROperations(statuses, slaConfig = {}) {
       return folder ? [folder, ...steps] : steps
     }
 
+    function buildPhase(ph, sla) {
+      const phase = buildPhaseFromJobs(jobsForPhase(ph), ph, sla)
+      if (phase) phase.folderEntries = (entry[ph].folderEntries || []).map(buildStep)
+      return phase
+    }
+
     const phases = {
-      switchover: buildPhaseFromJobs(jobsForPhase('switchover'), 'switchover', getSLA('switchover')),
-      switchback: buildPhaseFromJobs(jobsForPhase('switchback'), 'switchback', getSLA('switchback')),
-      readiness:  buildPhaseFromJobs(jobsForPhase('readiness'),  'readiness',  null),
-      failover:   buildPhaseFromJobs(jobsForPhase('failover'),   'failover',   getSLA('failover')),
-      failback:   buildPhaseFromJobs(jobsForPhase('failback'),   'failback',   getSLA('failback')),
+      switchover: buildPhase('switchover', getSLA('switchover')),
+      switchback: buildPhase('switchback', getSLA('switchback')),
+      readiness:  buildPhase('readiness',  null),
+      failover:   buildPhase('failover',   getSLA('failover')),
+      failback:   buildPhase('failback',   getSLA('failback')),
     }
 
     const allPhases   = Object.values(phases).filter(Boolean)
@@ -446,14 +461,26 @@ function rawJobsToDROperations(statuses, slaConfig = {}) {
 
 /**
  * @param {object} slaConfig  — from useSettings().settings.sla
+ * @param {string} [server]   — optional CTM server name / ctm filter
+ *
+ * Strategy (each tried in order, stopping at first success):
+ *  1. No limit param  — lets CTM use its own default, avoids the SaaS
+ *     StringIndexOutOfBoundsException triggered by explicit limit values.
+ *  2. limit=500       — explicit limit, smaller batch.
+ *  3. Per-phase subApplication queries — one parallel request per DR phase
+ *     type; merges results. Avoids any job with malformed data outside DR scope.
+ */
+/**
+ * @param {object} slaConfig  — from useSettings().settings.sla
  * @param {string} [server]   — optional CTM server name filter (e.g. 'PROD', 'DR')
  *                              Appended as ?server=NAME to the jobs/status request.
  */
-export async function fetchDROperations(slaConfig = {}, server = DEFAULT_SERVER) {
-  if (USE_MOCK) {
+export async function fetchDROperations(slaConfig = {}, server = DEFAULT_SERVER()) {
+  if (USE_MOCK()) {
     return new Promise((r) => setTimeout(() => r(mockDROperations), 450))
   }
-  const qs = buildJobsQuery(1000, server)
+  const limit = cfg().jobsLimit || 5000
+  const qs = buildJobsQuery(limit, server)
   const data = await ctmFetch(`/run/jobs/status${qs}`)
   return rawJobsToDROperations(data.statuses || [], slaConfig)
 }
@@ -473,14 +500,14 @@ function mapJob(raw) {
     host:      raw.host,
     app:       raw.application || '',
     subApp:    raw.subApplication || '',
-    startTime: raw.startTime ? parseCtmTime(raw.startTime)?.toISOString() : null,
-    endTime:   raw.endTime   ? parseCtmTime(raw.endTime)?.toISOString()   : null,
+    startTime: raw.startTime, //? parseCtmTime(raw.startTime)?.toISOString() : null,
+    endTime:   raw.endTime,   // ? parseCtmTime(raw.endTime)?.toISOString()   : null,
     logURI:    raw.logURI,
   }
 }
 
-export async function fetchJobs(limit = 500, server = DEFAULT_SERVER) {
-  if (USE_MOCK) {
+export async function fetchJobs(limit = 500, server = DEFAULT_SERVER()) {
+  if (USE_MOCK()) {
     return new Promise((r) => setTimeout(() => r(mockJobs), 400))
   }
   const qs = buildJobsQuery(limit, server)
@@ -489,7 +516,7 @@ export async function fetchJobs(limit = 500, server = DEFAULT_SERVER) {
 }
 
 export async function fetchEnvComparison(jobs) {
-  if (USE_MOCK) {
+  if (USE_MOCK()) {
     return new Promise((r) => setTimeout(() => r(mockEnvComparison), 450))
   }
   const active  = jobs.filter((j) => j.status === 'Executing').length
@@ -527,7 +554,7 @@ export async function fetchAgents() {
  */
 export async function fetchJobOutput(jobId) {
   if (!jobId) throw new Error('jobId is required')
-  const res = await fetch(`${BASE_URL}/run/job/${encodeURIComponent(jobId)}/output`, {
+  const res = await fetch(`${BASE_URL()}/run/job/${encodeURIComponent(jobId)}/output`, {
     headers: { 'x-api-key': _apiKey },
   })
   if (!res.ok) {

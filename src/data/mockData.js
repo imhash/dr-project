@@ -1,6 +1,11 @@
 // Mock data simulating Control-M Automation API responses
 // mockDROperations mirrors the real API structure observed on se-preprod SaaS (server IN01)
 
+// All timestamps are relative to now so timeline filters work correctly in mock mode
+const now  = Date.now()
+const ago  = (mins) => new Date(now - mins * 60_000).toISOString()
+const from = (mins) => new Date(now + mins * 60_000).toISOString()
+
 // Helper — builds a phase object matching buildPhase() output in controlmApi.js
 function phase(overrides) {
   return {
@@ -30,8 +35,8 @@ export const mockDROperations = [
         name: 'mha-DRM-CRM-MASTER-SWITCHOVER',
         folder: 'mha-DRM-CRM-MASTER-SWITCHOVER',
         status: 'Executing',
-        startTimeISO: '2026-04-09T13:21:28.000Z',
-        estEndISO:    '2026-04-09T13:31:30.000Z',
+        startTimeISO: ago(7),
+        estEndISO:    from(3),
         rtoTargetMins: 10,
         elapsedMins: 7,
         rtoPct: 70,
@@ -43,8 +48,8 @@ export const mockDROperations = [
         name: 'mha_DRM_CRM_READINESS',
         folder: 'mha_DRM_CRM_READINESS',
         status: 'Executing',
-        startTimeISO: '2026-04-09T13:22:41.000Z',
-        estEndISO:    '2026-04-09T14:15:00.000Z',
+        startTimeISO: ago(6),
+        estEndISO:    from(46),
         rtoTargetMins: 52,
         elapsedMins: 6,
         rtoPct: 12,
@@ -69,8 +74,8 @@ export const mockDROperations = [
         name: 'mha-DRM-MASTER-SWITCHOVER',
         folder: 'mha-DRM-MASTER-SWITCHOVER',
         status: 'Executing',
-        startTimeISO: '2026-04-09T13:15:27.000Z',
-        estEndISO:    '2026-04-09T13:31:30.000Z',
+        startTimeISO: ago(13),
+        estEndISO:    from(3),
         rtoTargetMins: 16,
         elapsedMins: 13,
         rtoPct: 81,
@@ -81,8 +86,8 @@ export const mockDROperations = [
         name: 'ARB_DRM_MASTER_SWITCHBACK',
         folder: 'ARB_DRM_MASTER_SWITCHBACK',
         status: 'Executing',
-        startTimeISO: '2026-04-09T13:19:28.000Z',
-        estEndISO:    '2026-04-09T14:15:00.000Z',
+        startTimeISO: ago(9),
+        estEndISO:    from(47),
         rtoTargetMins: 56,
         elapsedMins: 9,
         rtoPct: 16,
@@ -93,8 +98,8 @@ export const mockDROperations = [
         name: 'mha_DRM_TRADING-PORTAL_READINESS',
         folder: 'mha_DRM_TRADING-PORTAL_READINESS',
         status: 'Executing',
-        startTimeISO: '2026-04-09T13:23:32.000Z',
-        estEndISO:    '2026-04-09T14:15:00.000Z',
+        startTimeISO: ago(5),
+        estEndISO:    from(46),
         rtoTargetMins: 51,
         elapsedMins: 5,
         rtoPct: 10,

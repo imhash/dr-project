@@ -1,0 +1,35 @@
+{
+  "_readme": "Edit this file to configure the dashboard. It is NOT bundled — safe to update without rebuilding.",
+
+  "ctmApiBase":        "/ctm-api",
+  "ctmServer":         "PROD",
+  "useMock":           false,
+  "refreshIntervalMs": 30000,
+  "customerName":      "",
+
+  "_jobsLimitNote": "Omit jobsLimit (recommended) to let the API use its own default. Set only if you need an explicit cap — values above 1000 can trigger a CTM SaaS 500 error.",
+
+  "_proxyNote": "In production, your web server must proxy /ctm-api/* → https://<your-ctm-host>/automation-api/*  (see nginx.example.conf)",
+
+  "_appMetadataNote": "Per-application overrides for the DR report. Keys are exact CTM application names. All fields are optional — omitted fields fall back to inferred defaults.",
+  "appMetadata": {
+    "_example_AppName": {
+      "criticality":       "Critical",
+      "applicationType":   "Internal",
+      "serviceImpact":     "Full Outage"
+    },
+	"Murex": {
+      "criticality":       "Business Critical",
+      "applicationType":   "Internal",
+      "serviceImpact":     "Full Outage"
+    }
+  },
+
+  "_appMetadataDefaults": {
+    "_note":             "Defaults applied when an app is not listed in appMetadata above.",
+    "criticality":       "inferred",
+    "applicationType":   "Internal",
+    "serviceImpact":     "Full Outage",
+    "readinessImpact":   "Read Only"
+  }
+}
