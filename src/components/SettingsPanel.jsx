@@ -11,8 +11,8 @@
 import { useState, useRef } from 'react'
 import {
   X, Settings, Upload, Trash2, Pin, PinOff, Clock,
-  ChevronDown, Save, RotateCcw, AlertTriangle, Server,
-  Eye, EyeOff, Network, Wifi,
+  ChevronDown, RotateCcw, AlertTriangle, Server,
+  Eye, Network, Wifi, Layers,
   ArrowDown, ArrowUp, ArrowRightLeft, ArrowLeftRight, ShieldCheck,
 } from 'lucide-react'
 import { useT } from '../context/ThemeContext'
@@ -506,6 +506,54 @@ function VisibilitySection({ settings, save }) {
   )
 }
 
+// ── Readiness section ─────────────────────────────────────────────────────────
+
+const READINESS_GROUP_OPTIONS = [
+  { value: 'Criticality', label: 'By Criticality', desc: 'Critical → High → Medium → Low' },
+  { value: 'Team',        label: 'By Team',         desc: 'Group by owning team' },
+  { value: 'Datacenter',  label: 'By Datacenter',   desc: 'Group by server / datacenter' },
+  { value: 'None',        label: 'No Grouping',      desc: 'Flat list of all applications' },
+]
+
+function ReadinessSection({ settings, save }) {
+  const t   = useT()
+  const rdx = settings.readiness || {}
+
+  function setRdx(patch) {
+    save({ readiness: { ...rdx, ...patch } })
+  }
+
+  return (
+    <Section title="Readiness Page" icon={ShieldCheck}>
+      <div className="mb-1">
+        <FieldLabel>Default Application Grouping</FieldLabel>
+        <div className="space-y-1.5 mt-2">
+          {READINESS_GROUP_OPTIONS.map(({ value, label, desc }) => (
+            <div
+              key={value}
+              onClick={() => setRdx({ groupBy: value })}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
+                (rdx.groupBy || 'Criticality') === value
+                  ? 'border-blue-500/50 bg-blue-500/10'
+                  : `${t.border} ${t.cardHover}`
+              }`}
+            >
+              <Layers className={`w-3.5 h-3.5 flex-shrink-0 ${(rdx.groupBy || 'Criticality') === value ? 'text-blue-400' : t.textFaint}`} />
+              <div className="flex-1">
+                <span className={`text-xs font-medium ${t.text}`}>{label}</span>
+                <p className={`text-xs ${t.textFaint}`}>{desc}</p>
+              </div>
+              <div className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${
+                (rdx.groupBy || 'Criticality') === value ? 'border-blue-400 bg-blue-500' : t.border
+              }`} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </Section>
+  )
+}
+
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 export default function SettingsPanel({ onClose, appNames = [] }) {
@@ -551,7 +599,8 @@ export default function SettingsPanel({ onClose, appNames = [] }) {
         <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-5">
           <ConnectionSection settings={settings} save={save} />
           <VisibilitySection settings={settings} save={save} />
-          <BrandingSection settings={settings} save={save} />
+          <ReadinessSection  settings={settings} save={save} />
+          <BrandingSection   settings={settings} save={save} />
           <SlaSection settings={settings} saveSla={saveSla} appNames={appNames} />
           <TimezoneSection settings={settings} save={save} />
           <PinnedSection settings={settings} togglePin={togglePin} appNames={appNames} />

@@ -160,7 +160,7 @@ function Dashboard({ onLogout }) {
             <div className="flex items-center gap-2 mb-3 flex-wrap">
               <h2 className={`text-sm font-semibold ${t.text}`}>Application DR Status</h2>
               <span className={`text-xs px-2.5 py-0.5 rounded-full border ${t.border} ${t.textMuted}`}>
-                Switchover · Switchback · Readiness — grouped by CTM Application
+                Switchover · Switchback · Failover · Failback — grouped by CTM Application
               </span>
               {pinnedApps.length > 0 && (
                 <span className="text-xs px-2.5 py-0.5 rounded-full border border-blue-500/30 text-blue-400 bg-blue-500/10">

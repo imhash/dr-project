@@ -44,6 +44,9 @@ export const DEFAULT_SETTINGS = {
     topology:          true,
     agentConnectivity: true,
   },
+  readiness: {
+    groupBy: 'Criticality',   // Criticality | Team | Datacenter | None
+  },
 }
 
 function loadSettings() {
@@ -71,6 +74,10 @@ function loadSettings() {
           ...DEFAULT_SETTINGS.visibility.phases,
           ...(parsed.visibility?.phases || {}),
         },
+      },
+      readiness: {
+        ...DEFAULT_SETTINGS.readiness,
+        ...(parsed.readiness || {}),
       },
     }
   } catch {

@@ -1,16 +1,14 @@
-import { createContext, useContext, useState, useEffect, useRef } from 'react'
+import { createContext, useContext, useState, useEffect } from 'react'
 
 const ThemeContext = createContext({})
 
 export const THEMES = {
-  dark:     { label: 'Dark',     isDark: true,  swatch: '#1a1d27' },
-  light:    { label: 'Light',    isDark: false, swatch: '#f1f5f9' },
-  navy:     { label: 'Navy',     isDark: true,  swatch: '#0d1b2e' },
-  graphite: { label: 'Graphite', isDark: true,  swatch: '#1c1c1e' },
+  light: { label: 'Light', isDark: false, swatch: '#f1f5f9' },
+  dark:  { label: 'Dark',  isDark: true,  swatch: '#1a1d27' },
 }
 
 function applyTheme(name) {
-  const t = THEMES[name] ?? THEMES.dark
+  const t = THEMES[name] ?? THEMES.light
   document.documentElement.setAttribute('data-theme', name)
   document.documentElement.classList.toggle('dark', t.isDark)
 }
@@ -20,9 +18,9 @@ async function fetchTheme() {
     const res = await fetch('/api/theme')
     if (!res.ok) throw new Error()
     const { theme } = await res.json()
-    return THEMES[theme] ? theme : 'dark'
+    return THEMES[theme] ? theme : 'light'
   } catch {
-    return 'dark'
+    return 'light'
   }
 }
 
@@ -37,9 +35,15 @@ async function persistTheme(name) {
 }
 
 export function ThemeProvider({ children }) {
-  const [theme, setThemeState] = useState('dark')
+  const [theme, setThemeState] = useState('light')
 
   useEffect(() => {
+    // Check localStorage first for instant load, then server
+    const stored = localStorage.getItem('ctm-theme')
+    const initial = (stored && THEMES[stored]) ? stored : 'light'
+    applyTheme(initial)
+    setThemeState(initial)
+
     fetchTheme().then((name) => {
       applyTheme(name)
       setThemeState(name)
@@ -50,11 +54,11 @@ export function ThemeProvider({ children }) {
     if (!THEMES[name]) return
     applyTheme(name)
     setThemeState(name)
+    localStorage.setItem('ctm-theme', name)
     persistTheme(name)
   }
 
-  // legacy: components that still destructure { dark, toggle }
-  const dark = THEMES[theme]?.isDark ?? true
+  const dark   = THEMES[theme]?.isDark ?? false
   const toggle = () => setTheme(dark ? 'light' : 'dark')
 
   return (
@@ -66,7 +70,6 @@ export function ThemeProvider({ children }) {
 
 export const useTheme = () => useContext(ThemeContext)
 
-/** Returns theme-aware class strings backed by CSS custom properties */
 export function useT() {
   return {
     pageBg:     'bg-[var(--pageBg)]',

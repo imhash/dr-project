@@ -52,7 +52,7 @@ export default function Header({
               {dashboardTitle}
             </h1>
             <p className={`text-xs ${t.textMuted}`}>
-              Disaster Recovery · Switchover · Switchback · Readiness
+              Disaster Recovery · Switchover · Switchback · Failover · Failback
             </p>
           </div>
         </div>

@@ -15,25 +15,8 @@ body {
    Theme palettes via CSS custom properties
    ───────────────────────────────────────── */
 
-/* Dark (default) */
+/* Light (default) */
 :root,
-[data-theme="dark"] {
-  --pageBg:     #0f1117;
-  --card:       #1a1d27;
-  --cardHover:  #1f2233;
-  --inner:      #161926;
-  --tableHead:  #1f2233;
-  --inputBg:    #161926;
-  --border:     #2a2d3a;
-  --borderDash: #475569;
-  --text:       #ffffff;
-  --textSub:    #cbd5e1;
-  --textMuted:  #94a3b8;
-  --textFaint:  #64748b;
-  --textCode:   #94a3b8;
-}
-
-/* Light */
 [data-theme="light"] {
   --pageBg:     #e8edf5;
   --card:       #ffffff;
@@ -50,38 +33,21 @@ body {
   --textCode:   #2d4a6e;
 }
 
-/* Navy — corporate deep blue */
-[data-theme="navy"] {
-  --pageBg:     #070d1a;
-  --card:       #0d1b2e;
-  --cardHover:  #112240;
-  --inner:      #0a1628;
-  --tableHead:  #112240;
-  --inputBg:    #0a1628;
-  --border:     #1e3a5f;
-  --borderDash: #2d5a8e;
-  --text:       #e8f0fe;
-  --textSub:    #a8c4e0;
-  --textMuted:  #7ba3c8;
-  --textFaint:  #4a7fa8;
-  --textCode:   #7ba3c8;
-}
-
-/* Graphite — warm Apple-style dark */
-[data-theme="graphite"] {
-  --pageBg:     #161618;
-  --card:       #1c1c1e;
-  --cardHover:  #2c2c2e;
-  --inner:      #1c1c1e;
-  --tableHead:  #2c2c2e;
-  --inputBg:    #1c1c1e;
-  --border:     #3a3a3c;
-  --borderDash: #48484a;
-  --text:       #f5f5f7;
-  --textSub:    #d1d1d6;
-  --textMuted:  #aeaeb2;
-  --textFaint:  #8e8e93;
-  --textCode:   #aeaeb2;
+/* Dark */
+[data-theme="dark"] {
+  --pageBg:     #0f1117;
+  --card:       #1a1d27;
+  --cardHover:  #1f2233;
+  --inner:      #161926;
+  --tableHead:  #1f2233;
+  --inputBg:    #161926;
+  --border:     #2a2d3a;
+  --borderDash: #475569;
+  --text:       #ffffff;
+  --textSub:    #cbd5e1;
+  --textMuted:  #94a3b8;
+  --textFaint:  #64748b;
+  --textCode:   #94a3b8;
 }
 
 /* ── Body background follows theme ── */
@@ -95,3 +61,9 @@ body {
 ::-webkit-scrollbar-track    { background: var(--inner); }
 ::-webkit-scrollbar-thumb    { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--borderDash); }
+
+/* ── Print styles for PDF report ── */
+@media print {
+  body { background: white !important; color: black !important; }
+  .no-print { display: none !important; }
+}
