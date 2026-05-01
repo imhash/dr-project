@@ -1,7 +1,6 @@
 // Mock data simulating Control-M Automation API responses
 // mockDROperations mirrors the real API structure observed on se-preprod SaaS (server IN01)
 
-// All timestamps are relative to now so timeline filters work correctly in mock mode
 const now  = Date.now()
 const ago  = (mins) => new Date(now - mins * 60_000).toISOString()
 const from = (mins) => new Date(now + mins * 60_000).toISOString()
@@ -13,9 +12,100 @@ function phase(overrides) {
     startTimeISO: null, endTimeISO: null, estEndISO: null,
     rtoTargetMins: 30, elapsedMins: 12, rtoPct: 40,
     rtoStatus: 'On Track', rtoBreached: false, logURI: null,
+    totalSteps: 0, completedSteps: 0, failedSteps: 0,
+    steps: [], activityLog: [],
     ...overrides,
   }
 }
+
+// ─── Readiness step helpers ──────────────────────────────────────────────────
+function step(overrides) {
+  return {
+    jobId: null, name: null, folder: null,
+    status: 'Ended OK',
+    startTimeISO: null, endTimeISO: null,
+    logs: [],
+    ...overrides,
+  }
+}
+
+function logEntry(time, level, msg) {
+  return { time, level, msg }
+}
+
+// ─── Mock readiness steps for CRM ───────────────────────────────────────────
+const crmReadinessSteps = [
+  step({ jobId: 'CRM-RDY-001', name: 'CHECK-DB-CONNECTIVITY',      folder: 'CRM_READINESS', status: 'Ended OK',      startTimeISO: ago(5),  endTimeISO: ago(4),  logs: [logEntry(ago(5),'INFO','Starting DB connectivity check'), logEntry(ago(5),'INFO','Connecting to DR Oracle instance at 10.20.1.45:1521'), logEntry(ago(4),'SUCCESS','DB connection established. Latency: 4ms')] }),
+  step({ jobId: 'CRM-RDY-002', name: 'VALIDATE-SCHEMA-VERSIONS',   folder: 'CRM_READINESS', status: 'Ended OK',      startTimeISO: ago(4),  endTimeISO: ago(3),  logs: [logEntry(ago(4),'INFO','Comparing schema versions PROD vs DR'), logEntry(ago(4),'INFO','PROD schema version: v42.3.1'), logEntry(ago(3),'SUCCESS','DR schema version: v42.3.1 — Match confirmed')] }),
+  step({ jobId: 'CRM-RDY-003', name: 'CHECK-APP-SERVICES',         folder: 'CRM_READINESS', status: 'Ended OK',      startTimeISO: ago(3),  endTimeISO: ago(2),  logs: [logEntry(ago(3),'INFO','Pinging 6 application services'), logEntry(ago(2),'SUCCESS','All 6 services healthy')] }),
+  step({ jobId: 'CRM-RDY-004', name: 'VERIFY-DATA-REPLICATION',    folder: 'CRM_READINESS', status: 'Executing',     startTimeISO: ago(2),  endTimeISO: null,    logs: [logEntry(ago(2),'INFO','Starting replication lag check'), logEntry(ago(1),'INFO','DataGuard lag: 14 seconds'), logEntry(ago(0),'WARN','Lag exceeds 10s threshold — monitoring')] }),
+  step({ jobId: 'CRM-RDY-005', name: 'CHECK-NETWORK-ROUTES',       folder: 'CRM_READINESS', status: 'Waiting',       startTimeISO: null,    endTimeISO: null,    logs: [] }),
+  step({ jobId: 'CRM-RDY-006', name: 'VALIDATE-SSL-CERTIFICATES',  folder: 'CRM_READINESS', status: 'Waiting',       startTimeISO: null,    endTimeISO: null,    logs: [] }),
+]
+
+const crmReadinessLog = [
+  logEntry(ago(6), 'INFO',    'DR Readiness check initiated for CRM'),
+  logEntry(ago(5), 'INFO',    'Phase: Pre-checks starting'),
+  logEntry(ago(5), 'SUCCESS', 'DB connectivity: PASS'),
+  logEntry(ago(4), 'SUCCESS', 'Schema validation: PASS'),
+  logEntry(ago(3), 'SUCCESS', 'Application services: PASS (6/6)'),
+  logEntry(ago(2), 'INFO',    'Phase: Data integrity checks'),
+  logEntry(ago(2), 'INFO',    'Replication lag check in progress...'),
+  logEntry(ago(1), 'WARN',    'DataGuard replication lag: 14s (threshold: 10s)'),
+  logEntry(ago(0), 'INFO',    'Network route validation: pending'),
+]
+
+// ─── Mock readiness steps for Trading Portal ────────────────────────────────
+const tradingReadinessSteps = [
+  step({ jobId: 'TRD-RDY-001', name: 'CHECK-MARKET-FEED',          folder: 'TRD_READINESS', status: 'Ended OK',      startTimeISO: ago(4),  endTimeISO: ago(3),  logs: [logEntry(ago(4),'INFO','Testing market data feed connectivity'), logEntry(ago(3),'SUCCESS','Bloomberg feed connected. Latency: 2ms')] }),
+  step({ jobId: 'TRD-RDY-002', name: 'VALIDATE-POSITION-DATA',     folder: 'TRD_READINESS', status: 'Ended Not OK',  startTimeISO: ago(3),  endTimeISO: ago(2),  logs: [logEntry(ago(3),'INFO','Comparing position records PROD vs DR'), logEntry(ago(2),'ERROR','Position count mismatch: PROD=14,382 DR=14,201. Delta: 181 records'), logEntry(ago(2),'ERROR','Possible replication gap — check OGG process')] }),
+  step({ jobId: 'TRD-RDY-003', name: 'CHECK-RISK-ENGINE',          folder: 'TRD_READINESS', status: 'Ended OK',      startTimeISO: ago(2),  endTimeISO: ago(1),  logs: [logEntry(ago(2),'INFO','Risk engine health check'), logEntry(ago(1),'SUCCESS','Risk engine responsive. VaR calculation test passed')] }),
+  step({ jobId: 'TRD-RDY-004', name: 'VERIFY-OMS-CONNECTIVITY',    folder: 'TRD_READINESS', status: 'Ended Not OK',  startTimeISO: ago(1),  endTimeISO: ago(0),  logs: [logEntry(ago(1),'INFO','Testing OMS endpoints'), logEntry(ago(0),'ERROR','FIX gateway connection refused at 10.20.2.88:4001'), logEntry(ago(0),'ERROR','Failover OMS endpoint also unreachable')] }),
+  step({ jobId: 'TRD-RDY-005', name: 'CHECK-SETTLEMENT-SERVICE',   folder: 'TRD_READINESS', status: 'Executing',     startTimeISO: ago(0),  endTimeISO: null,    logs: [logEntry(ago(0),'INFO','Settlement service health check in progress')] }),
+]
+
+const tradingReadinessLog = [
+  logEntry(ago(5), 'INFO',    'DR Readiness check initiated for Trading Portal'),
+  logEntry(ago(4), 'SUCCESS', 'Market data feed: PASS'),
+  logEntry(ago(3), 'INFO',    'Validating position data integrity...'),
+  logEntry(ago(2), 'ERROR',   'FAIL: Position data mismatch (181 records delta)'),
+  logEntry(ago(2), 'SUCCESS', 'Risk engine: PASS'),
+  logEntry(ago(1), 'INFO',    'OMS connectivity check...'),
+  logEntry(ago(0), 'ERROR',   'FAIL: OMS FIX gateway unreachable'),
+  logEntry(ago(0), 'INFO',    'Settlement service check in progress...'),
+]
+
+// ─── Additional mock apps for Readiness page ─────────────────────────────────
+const sapReadinessSteps = [
+  step({ jobId: 'SAP-RDY-001', name: 'CHECK-SAP-INSTANCE',         folder: 'SAP_READINESS', status: 'Ended OK',      startTimeISO: ago(20), endTimeISO: ago(18), logs: [logEntry(ago(20),'INFO','SAP DR instance startup check'), logEntry(ago(18),'SUCCESS','SAP ABAP stack responding. SM51 OK')] }),
+  step({ jobId: 'SAP-RDY-002', name: 'VALIDATE-HANA-REPLICATION',  folder: 'SAP_READINESS', status: 'Ended OK',      startTimeISO: ago(18), endTimeISO: ago(15), logs: [logEntry(ago(18),'INFO','Checking HANA system replication status'), logEntry(ago(16),'INFO','Replication mode: SYNC. Status: ACTIVE'), logEntry(ago(15),'SUCCESS','HANA replication lag: 0s')] }),
+  step({ jobId: 'SAP-RDY-003', name: 'CHECK-RFC-CONNECTIONS',      folder: 'SAP_READINESS', status: 'Ended OK',      startTimeISO: ago(15), endTimeISO: ago(12), logs: [logEntry(ago(15),'INFO','Testing 12 RFC destinations'), logEntry(ago(12),'SUCCESS','12/12 RFC connections healthy')] }),
+  step({ jobId: 'SAP-RDY-004', name: 'VALIDATE-BATCH-JOBS',        folder: 'SAP_READINESS', status: 'Ended OK',      startTimeISO: ago(12), endTimeISO: ago(10), logs: [logEntry(ago(12),'INFO','Checking SM36 batch job schedule'), logEntry(ago(10),'SUCCESS','86 batch jobs transferred to DR successfully')] }),
+  step({ jobId: 'SAP-RDY-005', name: 'CHECK-PRINT-SERVICES',       folder: 'SAP_READINESS', status: 'Ended OK',      startTimeISO: ago(10), endTimeISO: ago(8),  logs: [logEntry(ago(10),'INFO','Print spool check'), logEntry(ago(8),'SUCCESS','SPAD: 8/8 printers active')] }),
+  step({ jobId: 'SAP-RDY-006', name: 'VERIFY-INTERFACE-SERVICES',  folder: 'SAP_READINESS', status: 'Ended OK',      startTimeISO: ago(8),  endTimeISO: ago(5),  logs: [logEntry(ago(8),'INFO','PI/PO interface channels check'), logEntry(ago(5),'SUCCESS','All 24 integration channels active')] }),
+]
+
+const coreReadinessSteps = [
+  step({ jobId: 'CBS-RDY-001', name: 'CHECK-T24-CONNECTIVITY',     folder: 'CBS_READINESS', status: 'Ended OK',      startTimeISO: ago(30), endTimeISO: ago(28), logs: [logEntry(ago(30),'INFO','T24 DR instance health check'), logEntry(ago(28),'SUCCESS','T24 responding on port 9099')] }),
+  step({ jobId: 'CBS-RDY-002', name: 'VALIDATE-EOD-POSITION',      folder: 'CBS_READINESS', status: 'Ended OK',      startTimeISO: ago(28), endTimeISO: ago(24), logs: [logEntry(ago(28),'INFO','Comparing EOD GL balances PROD vs DR'), logEntry(ago(24),'SUCCESS','GL balances match. Total: $4.2B')] }),
+  step({ jobId: 'CBS-RDY-003', name: 'CHECK-SWIFT-GATEWAY',        folder: 'CBS_READINESS', status: 'Ended Not OK',  startTimeISO: ago(24), endTimeISO: ago(20), logs: [logEntry(ago(24),'INFO','SWIFT gateway DR connectivity test'), logEntry(ago(22),'WARN','Primary SWIFT endpoint timeout'), logEntry(ago(20),'ERROR','FAIL: SWIFT DR BIC not activated. Contact SWIFT CSC.')] }),
+  step({ jobId: 'CBS-RDY-004', name: 'VALIDATE-CUSTOMER-DATA',     folder: 'CBS_READINESS', status: 'Ended OK',      startTimeISO: ago(20), endTimeISO: ago(16), logs: [logEntry(ago(20),'INFO','Customer record count validation'), logEntry(ago(16),'SUCCESS','1,247,832 customer records verified')] }),
+  step({ jobId: 'CBS-RDY-005', name: 'CHECK-REGULATORY-REPORTS',   folder: 'CBS_READINESS', status: 'Ended OK',      startTimeISO: ago(16), endTimeISO: ago(12), logs: [logEntry(ago(16),'INFO','Central bank report endpoints check'), logEntry(ago(12),'SUCCESS','CBB reporting gateway accessible')] }),
+  step({ jobId: 'CBS-RDY-006', name: 'VERIFY-ATM-SWITCH',          folder: 'CBS_READINESS', status: 'Ended OK',      startTimeISO: ago(12), endTimeISO: ago(8),  logs: [logEntry(ago(12),'INFO','ATM switch failover test'), logEntry(ago(8),'SUCCESS','ATM switch redirected to DR (248 ATMs)')] }),
+  step({ jobId: 'CBS-RDY-007', name: 'CHECK-MOBILE-BANKING',       folder: 'CBS_READINESS', status: 'Ended OK',      startTimeISO: ago(8),  endTimeISO: ago(4),  logs: [logEntry(ago(8),'INFO','Mobile banking backend connectivity'), logEntry(ago(4),'SUCCESS','API gateway responding. Push notification service active')] }),
+]
+
+const hrReadinessSteps = [
+  step({ jobId: 'HR-RDY-001',  name: 'CHECK-HRMS-INSTANCE',        folder: 'HR_READINESS',  status: 'Ended OK',      startTimeISO: ago(10), endTimeISO: ago(8),  logs: [logEntry(ago(10),'INFO','HRMS DR instance check'), logEntry(ago(8),'SUCCESS','HRMS web portal accessible')] }),
+  step({ jobId: 'HR-RDY-002',  name: 'VALIDATE-PAYROLL-DATA',      folder: 'HR_READINESS',  status: 'Ended OK',      startTimeISO: ago(8),  endTimeISO: ago(6),  logs: [logEntry(ago(8),'INFO','Payroll record validation'), logEntry(ago(6),'SUCCESS','3,412 employee records verified')] }),
+  step({ jobId: 'HR-RDY-003',  name: 'CHECK-AD-SYNC',              folder: 'HR_READINESS',  status: 'Ended OK',      startTimeISO: ago(6),  endTimeISO: ago(4),  logs: [logEntry(ago(6),'INFO','Active Directory sync status'), logEntry(ago(4),'SUCCESS','AD sync current. Last sync: 4 minutes ago')] }),
+]
+
+const reportingReadinessSteps = [
+  step({ jobId: 'RPT-RDY-001', name: 'CHECK-TABLEAU-SERVER',       folder: 'RPT_READINESS', status: 'Ended OK',      startTimeISO: ago(8),  endTimeISO: ago(6),  logs: [logEntry(ago(8),'INFO','Tableau DR server check'), logEntry(ago(6),'SUCCESS','Tableau Server 2024.1 responding')] }),
+  step({ jobId: 'RPT-RDY-002', name: 'VALIDATE-DATA-SOURCES',      folder: 'RPT_READINESS', status: 'Ended Not OK',  startTimeISO: ago(6),  endTimeISO: ago(4),  logs: [logEntry(ago(6),'INFO','Testing 14 data source connections'), logEntry(ago(4),'ERROR','3/14 data sources unreachable: DW_PROD_REPLICA, MART_FINANCE, MART_RISK')] }),
+  step({ jobId: 'RPT-RDY-003', name: 'CHECK-SCHEDULED-REPORTS',    folder: 'RPT_READINESS', status: 'Ended OK',      startTimeISO: ago(4),  endTimeISO: ago(2),  logs: [logEntry(ago(4),'INFO','Scheduled report transfer check'), logEntry(ago(2),'SUCCESS','87 scheduled reports transferred to DR Tableau')] }),
+]
 
 export const mockDROperations = [
   {
@@ -54,6 +144,11 @@ export const mockDROperations = [
         elapsedMins: 6,
         rtoPct: 12,
         rtoStatus: 'On Track',
+        totalSteps: 6,
+        completedSteps: 3,
+        failedSteps: 0,
+        steps: crmReadinessSteps,
+        activityLog: crmReadinessLog,
       }),
     },
   },
@@ -97,13 +192,217 @@ export const mockDROperations = [
         jobId: 'IN01:14ffx',
         name: 'mha_DRM_TRADING-PORTAL_READINESS',
         folder: 'mha_DRM_TRADING-PORTAL_READINESS',
-        status: 'Executing',
+        status: 'Ended Not OK',
         startTimeISO: ago(5),
-        estEndISO:    from(46),
+        endTimeISO:   ago(0),
         rtoTargetMins: 51,
         elapsedMins: 5,
         rtoPct: 10,
         rtoStatus: 'On Track',
+        totalSteps: 5,
+        completedSteps: 2,
+        failedSteps: 2,
+        steps: tradingReadinessSteps,
+        activityLog: tradingReadinessLog,
+      }),
+    },
+  },
+  {
+    app: 'SAP ERP',
+    server: 'IN01',
+    totalPhases: 2,
+    completedPhases: 1,
+    failedPhases: 0,
+    executingPhases: 0,
+    breachedPhases: 0,
+    overallStatus: 'Completed',
+    drillHealth: 'On Track',
+    completionPct: 100,
+    phases: {
+      switchover: phase({
+        jobId: 'IN01:1500a',
+        name: 'mha-DRM-SAP-MASTER-SWITCHOVER',
+        folder: 'mha-DRM-SAP-MASTER-SWITCHOVER',
+        status: 'Ended OK',
+        startTimeISO: ago(40),
+        endTimeISO:   ago(22),
+        rtoTargetMins: 30,
+        elapsedMins: 18,
+        rtoPct: 60,
+        rtoStatus: 'On Track',
+      }),
+      switchback: null,
+      readiness: phase({
+        jobId: 'IN01:1500b',
+        name: 'mha_DRM_SAP_READINESS',
+        folder: 'mha_DRM_SAP_READINESS',
+        status: 'Ended OK',
+        startTimeISO: ago(25),
+        endTimeISO:   ago(5),
+        rtoTargetMins: 60,
+        elapsedMins: 20,
+        rtoPct: 33,
+        rtoStatus: 'On Track',
+        totalSteps: 6,
+        completedSteps: 6,
+        failedSteps: 0,
+        steps: sapReadinessSteps,
+        activityLog: [
+          logEntry(ago(25), 'INFO',    'SAP DR Readiness check initiated'),
+          logEntry(ago(20), 'SUCCESS', 'SAP instance: PASS'),
+          logEntry(ago(18), 'SUCCESS', 'HANA replication: PASS (lag: 0s)'),
+          logEntry(ago(15), 'SUCCESS', 'RFC connections: PASS (12/12)'),
+          logEntry(ago(12), 'SUCCESS', 'Batch jobs: PASS (86 jobs)'),
+          logEntry(ago(10), 'SUCCESS', 'Print services: PASS'),
+          logEntry(ago(8),  'SUCCESS', 'Interface services: PASS (24 channels)'),
+          logEntry(ago(5),  'SUCCESS', 'All readiness checks PASSED. SAP ERP DR READY'),
+        ],
+      }),
+    },
+  },
+  {
+    app: 'Core Banking',
+    server: 'IN01',
+    totalPhases: 2,
+    completedPhases: 0,
+    failedPhases: 1,
+    executingPhases: 0,
+    breachedPhases: 0,
+    overallStatus: 'In Progress',
+    drillHealth: 'At Risk',
+    completionPct: 71,
+    phases: {
+      switchover: phase({
+        jobId: 'IN01:1501a',
+        name: 'mha-DRM-CBS-MASTER-SWITCHOVER',
+        folder: 'mha-DRM-CBS-MASTER-SWITCHOVER',
+        status: 'Ended OK',
+        startTimeISO: ago(45),
+        endTimeISO:   ago(20),
+        rtoTargetMins: 25,
+        elapsedMins: 25,
+        rtoPct: 100,
+        rtoStatus: 'Met',
+      }),
+      switchback: null,
+      readiness: phase({
+        jobId: 'IN01:1501b',
+        name: 'mha_DRM_CBS_READINESS',
+        folder: 'mha_DRM_CBS_READINESS',
+        status: 'Ended Not OK',
+        startTimeISO: ago(35),
+        endTimeISO:   ago(4),
+        rtoTargetMins: 45,
+        elapsedMins: 31,
+        rtoPct: 69,
+        rtoStatus: 'On Track',
+        totalSteps: 7,
+        completedSteps: 6,
+        failedSteps: 1,
+        steps: coreReadinessSteps,
+        activityLog: [
+          logEntry(ago(35), 'INFO',    'Core Banking DR Readiness initiated'),
+          logEntry(ago(30), 'SUCCESS', 'T24 connectivity: PASS'),
+          logEntry(ago(28), 'SUCCESS', 'EOD GL position validation: PASS'),
+          logEntry(ago(24), 'INFO',    'SWIFT gateway test in progress...'),
+          logEntry(ago(20), 'ERROR',   'FAIL: SWIFT DR BIC not activated'),
+          logEntry(ago(20), 'WARN',    'ACTION REQUIRED: Contact SWIFT CSC to activate BIC FAKBHBBA'),
+          logEntry(ago(16), 'SUCCESS', 'Customer data validation: PASS'),
+          logEntry(ago(12), 'SUCCESS', 'Regulatory reporting: PASS'),
+          logEntry(ago(8),  'SUCCESS', 'ATM switch: PASS (248 ATMs)'),
+          logEntry(ago(4),  'SUCCESS', 'Mobile banking: PASS'),
+          logEntry(ago(4),  'ERROR',   'Readiness INCOMPLETE — SWIFT gateway failure requires manual resolution'),
+        ],
+      }),
+    },
+  },
+  {
+    app: 'HR Portal',
+    server: 'IN01',
+    totalPhases: 1,
+    completedPhases: 1,
+    failedPhases: 0,
+    executingPhases: 0,
+    breachedPhases: 0,
+    overallStatus: 'Completed',
+    drillHealth: 'On Track',
+    completionPct: 100,
+    phases: {
+      switchover: phase({
+        jobId: 'IN01:1502a',
+        name: 'mha-DRM-HR-SWITCHOVER',
+        folder: 'mha-DRM-HR-SWITCHOVER',
+        status: 'Ended OK',
+        startTimeISO: ago(20),
+        endTimeISO:   ago(10),
+        rtoTargetMins: 15,
+        elapsedMins: 10,
+        rtoPct: 67,
+        rtoStatus: 'On Track',
+      }),
+      switchback: null,
+      readiness: phase({
+        jobId: 'IN01:1502b',
+        name: 'mha_DRM_HR_READINESS',
+        folder: 'mha_DRM_HR_READINESS',
+        status: 'Ended OK',
+        startTimeISO: ago(12),
+        endTimeISO:   ago(4),
+        rtoTargetMins: 20,
+        elapsedMins: 8,
+        rtoPct: 40,
+        rtoStatus: 'On Track',
+        totalSteps: 3,
+        completedSteps: 3,
+        failedSteps: 0,
+        steps: hrReadinessSteps,
+        activityLog: [
+          logEntry(ago(12), 'INFO',    'HR Portal DR Readiness initiated'),
+          logEntry(ago(10), 'SUCCESS', 'HRMS instance: PASS'),
+          logEntry(ago(8),  'SUCCESS', 'Payroll data: PASS (3,412 records)'),
+          logEntry(ago(6),  'SUCCESS', 'AD sync: PASS'),
+          logEntry(ago(4),  'SUCCESS', 'All checks PASSED. HR Portal DR READY'),
+        ],
+      }),
+    },
+  },
+  {
+    app: 'Reporting Suite',
+    server: 'IN01',
+    totalPhases: 1,
+    completedPhases: 0,
+    failedPhases: 1,
+    executingPhases: 0,
+    breachedPhases: 0,
+    overallStatus: 'In Progress',
+    drillHealth: 'At Risk',
+    completionPct: 67,
+    phases: {
+      switchover: null,
+      switchback: null,
+      readiness: phase({
+        jobId: 'IN01:1503b',
+        name: 'mha_DRM_REPORTING_READINESS',
+        folder: 'mha_DRM_REPORTING_READINESS',
+        status: 'Ended Not OK',
+        startTimeISO: ago(10),
+        endTimeISO:   ago(2),
+        rtoTargetMins: 30,
+        elapsedMins: 8,
+        rtoPct: 27,
+        rtoStatus: 'On Track',
+        totalSteps: 3,
+        completedSteps: 2,
+        failedSteps: 1,
+        steps: reportingReadinessSteps,
+        activityLog: [
+          logEntry(ago(10), 'INFO',    'Reporting Suite DR Readiness initiated'),
+          logEntry(ago(8),  'SUCCESS', 'Tableau Server: PASS'),
+          logEntry(ago(6),  'INFO',    'Testing data source connections...'),
+          logEntry(ago(4),  'ERROR',   'FAIL: 3/14 data sources unreachable (DW_PROD_REPLICA, MART_FINANCE, MART_RISK)'),
+          logEntry(ago(4),  'WARN',    'Reporting may be degraded for Finance & Risk dashboards'),
+          logEntry(ago(2),  'SUCCESS', 'Scheduled reports: PASS (87 transferred)'),
+        ],
       }),
     },
   },
@@ -237,7 +536,6 @@ export const mockEnvComparison = {
   },
 }
 
-// Agent list derived from real hosts observed in job data (agent config API not exposed on this SaaS instance)
 export const mockAgents = [
   { id: 'A01', name: 'zzz-linux-agent-02', host: 'zzz-linux-agent-02',                       env: 'DR',   datacenter: 'IN01 / SaaS', status: 'Connected',    lastPing: '2026-04-09T12:52:30Z', platform: 'Linux',   version: '9.21.x', activeJobs: 63 },
   { id: 'A02', name: 'ctm-server',          host: 'ctm-server',                               env: 'DR',   datacenter: 'IN01 / SaaS', status: 'Connected',    lastPing: '2026-04-09T12:52:28Z', platform: 'Linux',   version: '9.21.x', activeJobs: 0  },
@@ -250,3 +548,13 @@ export const mockAgents = [
   { id: 'A09', name: 'em-frnunez-w3',       host: 'em-frnunez-w3-frnunez',                    env: 'DR',   datacenter: 'IN01 / SaaS', status: 'Connected',    lastPing: '2026-04-09T12:52:32Z', platform: 'Windows', version: '9.21.x', activeJobs: 0  },
   { id: 'A10', name: 'N/A (unresolved)',     host: '(host not resolved)',                      env: 'DR',   datacenter: 'IN01 / SaaS', status: 'Disconnected', lastPing: '2026-04-09T11:10:14Z', platform: 'Linux',   version: '9.21.x', activeJobs: 0  },
 ]
+
+// App metadata used by the Readiness page (criticality, team, etc.)
+export const mockAppMeta = {
+  'CRM':              { criticality: 'High',     team: 'CRM Team',      applicationType: 'Customer-Facing', serviceImpact: 'Customer Operations',  owner: 'crm-ops@company.com' },
+  'Trading Portal':   { criticality: 'Critical', team: 'Trading Ops',   applicationType: 'Trading',         serviceImpact: 'Revenue Critical',     owner: 'trading-dr@company.com' },
+  'SAP ERP':          { criticality: 'Critical', team: 'ERP Team',      applicationType: 'ERP',             serviceImpact: 'Full Business Ops',    owner: 'sap-basis@company.com' },
+  'Core Banking':     { criticality: 'Critical', team: 'Core Banking',  applicationType: 'Banking',         serviceImpact: 'Full Outage',          owner: 'cbs-ops@company.com' },
+  'HR Portal':        { criticality: 'Medium',   team: 'HR IT',         applicationType: 'Internal',        serviceImpact: 'Employee Services',    owner: 'hr-it@company.com' },
+  'Reporting Suite':  { criticality: 'Low',      team: 'BI Team',       applicationType: 'Analytics',       serviceImpact: 'Reporting Degraded',   owner: 'bi-team@company.com' },
+}

@@ -11,6 +11,7 @@ import DrillReportModal  from './components/DrillReportModal'
 import SettingsPanel     from './components/SettingsPanel'
 import TVView            from './components/TVView'
 import TimelineFilter, { matchesFilter } from './components/TimelineFilter'
+import DRReadinessPage  from './components/DRReadinessPage'
 import { useT }          from './context/ThemeContext'
 import { useSettings }   from './context/SettingsContext'
 import { fetchDROperations, fetchAgents, setApiKey } from './services/controlmApi'
@@ -19,7 +20,7 @@ import { getConfig }     from './config'
 const REFRESH_MS  = () => getConfig().refreshIntervalMs || 30_000
 const SESSION_KEY = 'ctm-session'
 
-// Views: 'dashboard' | 'topology' | 'service-config'
+// Views: 'dashboard' | 'readiness' | 'topology' | 'service-config'
 function Dashboard({ onLogout }) {
   const t = useT()
   const { settings } = useSettings()
@@ -78,6 +79,16 @@ function Dashboard({ onLogout }) {
 
   const appNames = operations.map((o) => o.app)
 
+  // ── DR Readiness page ──
+  if (activeView === 'readiness') {
+    return (
+      <DRReadinessPage
+        operations={operations}
+        onBack={() => setActiveView('dashboard')}
+      />
+    )
+  }
+
   // ── Service Config full page ──
   if (activeView === 'service-config') {
     return (
@@ -123,6 +134,7 @@ function Dashboard({ onLogout }) {
         onSettings={() => setShowSettings(true)}
         onTopology={() => setActiveView('topology')}
         onTVView={() => setShowTV(true)}
+        onReadiness={() => setActiveView('readiness')}
         hasData={operations.length > 0}
         showTopology={settings.visibility?.topology !== false}
       />

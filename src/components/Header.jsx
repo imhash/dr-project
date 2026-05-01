@@ -1,4 +1,4 @@
-import { RefreshCw, Shield, Clock, Palette, FileSpreadsheet, Settings, Network, Tv2 } from 'lucide-react'
+import { RefreshCw, Shield, Clock, Palette, FileSpreadsheet, Settings, Network, Tv2, ShieldCheck } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { useTheme, useT, THEMES } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
@@ -7,6 +7,7 @@ import { getConfig } from '../config'
 export default function Header({
   lastRefresh, autoRefresh, onToggleAuto,
   onRefresh, loading, onLogout, onReport, hasData, onSettings, onTopology, onTVView, showTopology,
+  onReadiness,
 }) {
   const { theme, setTheme } = useTheme()
   const t = useT()
@@ -135,6 +136,18 @@ export default function Header({
             >
               <Tv2 className="w-4 h-4" />
               <span className="hidden sm:inline">TV</span>
+            </button>
+          )}
+
+          {/* DR Readiness */}
+          {hasData && (
+            <button
+              onClick={onReadiness}
+              title="DR Readiness — Application readiness status"
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${t.card} ${t.border} ${t.textMuted} hover:opacity-80`}
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span className="hidden sm:inline">Readiness</span>
             </button>
           )}
 
