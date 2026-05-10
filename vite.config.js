@@ -21,7 +21,8 @@ import react from '@vitejs/plugin-react'
  *                         Useful for offline development / demos.
  *
  * Proxy target options:
-
+ *   Production SaaS:  https://se-preprod-aapi.us1.controlm.com
+ *   Demo environment: https://ctmawsdemoprod.vse.bmc.com
  *
  * The proxy rewrites:
  *   /ctm-api/<path>  →  https://<target>/automation-api/<path>
