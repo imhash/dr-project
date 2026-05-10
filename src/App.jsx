@@ -7,7 +7,7 @@ import AgentConnectivity from './components/AgentConnectivity'
 import ServiceGraph      from './components/ServiceGraph'
 import ServiceConfigPage from './pages/ServiceConfigPage'
 import LoginPage         from './components/LoginPage'
-import DrillReportModal  from './components/DrillReportModal'
+import ReportsHub        from './components/ReportsHub'
 import SettingsPanel     from './components/SettingsPanel'
 import TVView            from './components/TVView'
 import TimelineFilter, { matchesFilter } from './components/TimelineFilter'
@@ -19,6 +19,7 @@ import { getConfig }     from './config'
 
 const REFRESH_MS  = () => getConfig().refreshIntervalMs || 30_000
 const SESSION_KEY = 'ctm-session'
+
 
 // Views: 'dashboard' | 'readiness' | 'topology' | 'service-config'
 function Dashboard({ onLogout }) {
@@ -114,7 +115,7 @@ function Dashboard({ onLogout }) {
   return (
     <div className={`min-h-screen flex flex-col ${t.pageBg}`}>
       {showReport && (
-        <DrillReportModal operations={operations} onClose={() => setShowReport(false)} />
+        <ReportsHub operations={operations} onClose={() => setShowReport(false)} />
       )}
       {showSettings && (
         <SettingsPanel appNames={appNames} onClose={() => setShowSettings(false)} />

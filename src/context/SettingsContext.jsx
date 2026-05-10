@@ -47,6 +47,7 @@ export const DEFAULT_SETTINGS = {
   readiness: {
     groupBy: 'Criticality',   // Criticality | Team | Datacenter | None
   },
+  appMeta: {},   // { [appName]: { criticality, applicationType, serviceImpact, owner, team } }
 }
 
 function loadSettings() {
@@ -79,6 +80,7 @@ function loadSettings() {
         ...DEFAULT_SETTINGS.readiness,
         ...(parsed.readiness || {}),
       },
+      appMeta: parsed.appMeta || {},
     }
   } catch {
     return DEFAULT_SETTINGS

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { X, FileText, Printer, Download, Clock, Mail, Check, Layers } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { X, FileText, Printer, Download, Clock, Mail, Check, Layers, Eye, EyeOff, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { useT } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
 
@@ -49,16 +49,21 @@ const ALL_SECTIONS = [
 const SCHEDULES = ['Disabled', 'After every DR Drill (auto)', 'Weekly — Monday 08:00', 'Monthly — 1st, 08:00', 'Quarterly']
 
 // ─── PDF HTML builder ─────────────────────────────────────────────────────────
-function buildPDFHtml({ operations, title, org, preparedFor, preparedBy, includeDate, includeConfidential, template, sections }) {
+function buildPDFHtml({ operations, title, org, preparedFor, preparedBy, includeDate, includeConfidential, template, sections, goNoGoText = '', footerText = '', appDecisions = {}, forPreview = false }) {
   const ready   = operations.filter(o => o.phases?.readiness?.status === 'Ended OK').length
   const failed  = operations.filter(o => o.phases?.readiness?.status === 'Ended Not OK').length
   const total   = operations.length
   const pct     = total > 0 ? Math.round(ready / total * 100) : 0
   const today   = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
-  const tmplLabel = TEMPLATES.find(t => t.id === template)?.label || template
-  const goNoGo  = pct >= 80
-    ? { label: 'GO',    color: '#15803d', bg: '#dcfce7', border: '#86efac', reason: `${pct}% of applications are DR-ready.` }
-    : { label: 'NO-GO', color: '#dc2626', bg: '#fee2e2', border: '#fca5a5', reason: `Only ${pct}% of applications are DR-ready. ${failed} application(s) require remediation before activation.` }
+
+  // Overall GO/NO-GO: NO-GO if any app is explicitly marked NO-GO
+  const hasNoGo   = Object.values(appDecisions).some(d => d === 'NO-GO')
+  const goNoGo    = !hasNoGo
+    ? { label: 'GO',    color: '#15803d', bg: '#dcfce7', border: '#86efac' }
+    : { label: 'NO-GO', color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' }
+  const goNoGoReason = goNoGoText || (pct >= 80
+    ? `${pct}% of applications are DR-ready.`
+    : `Only ${pct}% of applications are DR-ready. ${failed} application(s) require remediation before activation.`)
 
   const hasSec = id => sections.includes(id)
 
@@ -120,9 +125,11 @@ function buildPDFHtml({ operations, title, org, preparedFor, preparedBy, include
   .sig-date { margin-top: 28px; font-size: 9pt; color: #94a3b8; }
   .page-break { page-break-before: always; }
   .content { padding: 40px 50px; }
+  .report-footer { border-top: 1px solid #e2e8f0; margin-top: 32px; padding: 12px 0 4px; font-size: 8.5pt; color: #94a3b8; text-align: center; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .no-print { display: none; }
+    @page { margin: 15mm; }
   }
 </style>
 </head>
@@ -132,7 +139,6 @@ ${hasSec('cover') ? `
 <div class="cover">
   <h1>${title || 'DR Readiness Assessment Report'}</h1>
   ${includeConfidential ? '<div class="confidential">Confidential</div>' : ''}
-  <div class="sub">Template: ${tmplLabel}</div>
   <div class="meta" style="margin-top:20px">
     ${org          ? `<span>Organization</span><span>${org}</span>` : ''}
     ${preparedFor  ? `<span>Prepared For</span><span>${preparedFor}</span>` : ''}
@@ -184,21 +190,24 @@ ${hasSec('risk') && failed > 0 ? `
 ${(hasSec('appSummary') || hasSec('appList')) ? `
 <h2>Application Status</h2>
 <table>
-  <tr><th>Application</th><th>Server</th><th>Criticality</th><th>Team</th><th>Status</th><th>Steps</th><th>Folder Runs</th></tr>
+  <tr><th>Application</th><th>Server</th><th>Criticality</th><th>RPO</th><th>Team</th><th>Status</th><th>Steps</th><th>Folder Runs</th><th>Decision</th></tr>
   ${operations.map(op => {
     const r = op.phases?.readiness
     const m = op.meta || {}
     const isOk = r?.status === 'Ended OK'
     const runs = r?.folderRuns || []
     const okRuns = runs.filter(r => r.status === 'Ended OK').length
+    const dec = appDecisions[op.app] || (isOk ? 'GO' : 'NO-GO')
     return `<tr>
       <td><strong>${op.app}</strong></td>
       <td>${op.server}</td>
       <td>${m.criticality || '—'}</td>
+      <td>${m.rpo || '—'}</td>
       <td>${m.team || '—'}</td>
       <td><span class="badge ${isOk ? 'ok' : r?.status==='Executing' ? 'info' : 'fail'}">${isOk ? '✓ Ready' : r?.status==='Executing' ? '⟳ Checking' : '✗ Not Ready'}</span></td>
       <td>${r?.completedSteps||0} / ${r?.totalSteps||0}</td>
       <td>${okRuns} / ${runs.length} OK</td>
+      <td><span class="badge ${dec === 'GO' ? 'ok' : 'fail'}">${dec}</span></td>
     </tr>`
   }).join('')}
 </table>` : ''}
@@ -271,7 +280,7 @@ ${hasSec('recommendation') ? `
 <h2>Go / No-Go Recommendation</h2>
 <div class="gono-box">
   <div class="gono-label">${goNoGo.label}</div>
-  <div class="gono-reason">${goNoGo.reason}</div>
+  <div class="gono-reason">${goNoGoReason}</div>
 </div>` : ''}
 
 ${hasSec('signature') ? `
@@ -287,9 +296,10 @@ ${hasSec('signature') ? `
   </div>
 </div>` : ''}
 
+${footerText ? `<div class="report-footer">${footerText}</div>` : ''}
 </div>
 
-<script>window.onload = function() { window.print(); }</script>
+${forPreview ? '' : '<script>window.onload = function() { window.print(); }</script>'}
 </body>
 </html>`
 }
@@ -324,6 +334,27 @@ export default function ReadinessReportModal({ operations = [], onClose }) {
   const [recipients,          setRecipients]          = useState('')
   const [printing,            setPrinting]            = useState(false)
   const [exported,            setExported]            = useState(false)
+  const [showPreview,         setShowPreview]         = useState(false)
+  const [footerText,          setFooterText]          = useState('')
+
+  // Compute default GO/NO-GO text so the user can edit it before printing
+  const _ready  = operations.filter(o => o.phases?.readiness?.status === 'Ended OK').length
+  const _failed = operations.filter(o => o.phases?.readiness?.status === 'Ended Not OK').length
+  const _total  = operations.length
+  const _pct    = _total > 0 ? Math.round(_ready / _total * 100) : 0
+  const defaultGoNoGoText = _pct >= 80
+    ? `${_pct}% of applications are DR-ready. All critical systems have passed readiness checks.`
+    : `Only ${_pct}% of applications are DR-ready. ${_failed} application(s) require remediation before DR activation can be approved.`
+  const [goNoGoText, setGoNoGoText] = useState(defaultGoNoGoText)
+
+  // Per-app Go/No-Go decisions: default GO if Ended OK, NO-GO otherwise
+  const [appDecisions, setAppDecisions] = useState(() => {
+    const d = {}
+    operations.forEach(op => {
+      d[op.app] = op.phases?.readiness?.status === 'Ended OK' ? 'GO' : 'NO-GO'
+    })
+    return d
+  })
 
   function applyTemplate(id) {
     setTemplate(id)
@@ -337,12 +368,18 @@ export default function ReadinessReportModal({ operations = [], onClose }) {
 
   const activeSections = template === 'custom' ? sections : (TEMPLATES.find(t => t.id === template)?.sections || [])
 
+  const previewHtml = useMemo(() => buildPDFHtml({
+    operations, title: reportTitle, org, preparedFor, preparedBy,
+    includeDate, includeConfidential, template, sections: activeSections,
+    goNoGoText, footerText, appDecisions, forPreview: true,
+  }), [operations, reportTitle, org, preparedFor, preparedBy, includeDate, includeConfidential, template, activeSections, goNoGoText, footerText, appDecisions])
+
   function handlePDF() {
     setPrinting(true)
     const html = buildPDFHtml({
       operations, title: reportTitle, org, preparedFor, preparedBy,
       includeDate, includeConfidential, template,
-      sections: activeSections,
+      sections: activeSections, goNoGoText, footerText, appDecisions,
     })
     const w = window.open('', '_blank', 'width=900,height=700')
     if (!w) { alert('Please allow pop-ups to generate the PDF.'); setPrinting(false); return }
@@ -372,18 +409,19 @@ export default function ReadinessReportModal({ operations = [], onClose }) {
       `"Ready","${ready}"`,
       `"Not Ready","${failed}"`,
       `"Overall Readiness","${pct}%"`,
-      `"Go/No-Go","${pct >= 80 ? 'GO' : 'NO-GO'}"`,
+      `"Go/No-Go","${Object.values(appDecisions).some(d => d === 'NO-GO') ? 'NO-GO' : 'GO'}"`,
       '',
       '"APPLICATION DETAIL"',
-      '"Application","Server","Criticality","Team","Status","Steps OK","Steps Failed","Folder Runs","Owner"',
+      '"Application","Server","Criticality","RPO","Team","Status","Decision","Steps OK","Steps Failed","Folder Runs","Owner"',
       ...operations.map(op => {
         const r = op.phases?.readiness
         const m = op.meta || {}
         const runs = r?.folderRuns || []
         const okRuns = runs.filter(r => r.status === 'Ended OK').length
         return [
-          `"${op.app}"`, `"${op.server}"`, `"${m.criticality||''}"`, `"${m.team||''}"`,
-          `"${r?.status||''}"`, `"${r?.completedSteps||0}"`, `"${r?.failedSteps||0}"`,
+          `"${op.app}"`, `"${op.server}"`, `"${m.criticality||''}"`, `"${m.rpo||''}"`, `"${m.team||''}"`,
+          `"${r?.status||''}"`, `"${appDecisions[op.app] || ''}"`,
+          `"${r?.completedSteps||0}"`, `"${r?.failedSteps||0}"`,
           `"${okRuns}/${runs.length}"`, `"${m.owner||''}"`,
         ].join(',')
       }),
@@ -402,7 +440,7 @@ export default function ReadinessReportModal({ operations = [], onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className={`${t.card} border ${t.border} rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl`}>
+      <div className={`${t.card} border ${t.border} rounded-2xl w-full ${showPreview ? 'max-w-6xl' : 'max-w-2xl'} max-h-[92vh] flex flex-col shadow-2xl transition-all duration-300`}>
 
         {/* Header */}
         <div className={`flex items-center gap-3 px-6 py-4 border-b ${t.border} flex-shrink-0`}>
@@ -411,13 +449,30 @@ export default function ReadinessReportModal({ operations = [], onClose }) {
             <h2 className={`font-bold ${t.text}`}>Generate Readiness Report</h2>
             <p className={`text-xs ${t.textMuted}`}>{operations.length} applications · {operations.filter(o => o.phases?.readiness?.status === 'Ended OK').length} ready</p>
           </div>
-          <button onClick={onClose} className={`ml-auto p-2 rounded-lg ${t.cardHover} ${t.textMuted} hover:text-current`}>
-            <X size={16} />
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setShowPreview(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium border transition-colors ${
+                showPreview
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : `${t.border} ${t.textMuted} ${t.cardHover}`
+              }`}
+              title={showPreview ? 'Hide preview' : 'Show live preview'}
+            >
+              {showPreview ? <EyeOff size={13} /> : <Eye size={13} />}
+              {showPreview ? 'Hide Preview' : 'Preview'}
+            </button>
+            <button onClick={onClose} className={`p-2 rounded-lg ${t.cardHover} ${t.textMuted} hover:text-current`}>
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+        {/* Body — split when preview is active */}
+        <div className={`flex-1 flex overflow-hidden min-h-0 ${showPreview ? 'flex-row' : 'flex-col'}`}>
+
+        {/* Config form */}
+        <div className={`overflow-y-auto px-6 py-5 space-y-6 ${showPreview ? 'w-80 flex-shrink-0 border-r ' + t.border : 'flex-1'}`}>
 
           {/* Template */}
           <div>
@@ -493,6 +548,79 @@ export default function ReadinessReportModal({ operations = [], onClose }) {
           </div>
 
           {/* Auto-generation */}
+          {/* GO/NO-GO editable text */}
+          <div>
+            <label className={`text-sm font-semibold ${t.text} block mb-1`}>GO / NO-GO Recommendation Text</label>
+            <p className={`text-xs ${t.textMuted} mb-2`}>Editable — pre-filled from readiness score ({_pct}%)</p>
+            <textarea
+              value={goNoGoText}
+              onChange={e => setGoNoGoText(e.target.value)}
+              rows={3}
+              className={`w-full px-3 py-2 rounded-lg border ${t.border} ${t.card} text-sm ${t.text} placeholder-gray-400 outline-none focus:border-blue-500/60 transition-colors resize-none`}
+              placeholder="Enter the recommendation text shown in the report…"
+            />
+          </div>
+
+          {/* Per-app Go/No-Go */}
+          <div>
+            <label className={`text-sm font-semibold ${t.text} block mb-1`}>Per-Application Decision</label>
+            <p className={`text-xs ${t.textMuted} mb-2`}>Override the default GO / NO-GO per application. Affects the recommendation section.</p>
+            <div className={`rounded-xl border ${t.border} overflow-hidden`}>
+              {operations.map((op, i) => {
+                const dec = appDecisions[op.app] || 'NO-GO'
+                const isGo = dec === 'GO'
+                return (
+                  <div key={op.app} className={`flex items-center justify-between px-3 py-2.5 ${i > 0 ? `border-t ${t.border}` : ''}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`text-sm font-medium truncate ${t.text}`}>{op.app}</span>
+                      {(op.meta?.criticality) && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded border flex-shrink-0 ${
+                          op.meta.criticality === 'Critical' ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                          : op.meta.criticality === 'High' ? 'bg-orange-500/10 text-orange-400 border-orange-500/30'
+                          : `${t.border} ${t.textFaint}`
+                        }`}>{op.meta.criticality}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => setAppDecisions(prev => ({ ...prev, [op.app]: 'GO' }))}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                          isGo
+                            ? 'bg-green-600 border-green-600 text-white'
+                            : `${t.border} ${t.textMuted} hover:opacity-80`
+                        }`}
+                      >
+                        <ThumbsUp className="w-3 h-3" /> GO
+                      </button>
+                      <button
+                        onClick={() => setAppDecisions(prev => ({ ...prev, [op.app]: 'NO-GO' }))}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                          !isGo
+                            ? 'bg-red-600 border-red-600 text-white'
+                            : `${t.border} ${t.textMuted} hover:opacity-80`
+                        }`}
+                      >
+                        <ThumbsDown className="w-3 h-3" /> NO-GO
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div>
+            <label className={`text-sm font-semibold ${t.text} block mb-1`}>Report Footer</label>
+            <input
+              value={footerText}
+              onChange={e => setFooterText(e.target.value)}
+              placeholder="e.g. Confidential — Internal Use Only · DR Team · 2026"
+              className={`w-full px-3 py-2 rounded-lg border ${t.border} ${t.card} text-sm ${t.text} placeholder-gray-400 outline-none focus:border-blue-500/60 transition-colors`}
+            />
+            <p className={`text-xs ${t.textFaint} mt-1`}>Appears at the bottom of the report. Leave blank for no footer.</p>
+          </div>
+
           <div className={`rounded-xl border ${t.border} p-4`}>
             <div className="flex items-center gap-2 mb-3">
               <Clock size={15} className="text-purple-500" />
@@ -520,7 +648,26 @@ export default function ReadinessReportModal({ operations = [], onClose }) {
               )}
             </div>
           </div>
-        </div>
+        </div>{/* end config form */}
+
+        {/* Preview iframe */}
+        {showPreview && (
+          <div className="flex-1 flex flex-col min-w-0 min-h-0">
+            <div className={`flex items-center gap-2 px-4 py-2 border-b ${t.border} flex-shrink-0`}>
+              <Eye size={13} className="text-blue-500" />
+              <span className={`text-xs font-medium ${t.text}`}>Live Preview</span>
+              <span className={`text-xs ${t.textFaint} ml-1`}>Updates as you change settings</span>
+            </div>
+            <iframe
+              srcDoc={previewHtml}
+              className="flex-1 w-full border-0"
+              sandbox="allow-scripts"
+              title="Report Preview"
+            />
+          </div>
+        )}
+
+        </div>{/* end body flex */}
 
         {/* Footer */}
         <div className={`flex items-center gap-3 px-6 py-4 border-t ${t.border} flex-shrink-0`}>

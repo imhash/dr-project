@@ -12,7 +12,7 @@ import { useState, useRef } from 'react'
 import {
   X, Settings, Upload, Trash2, Pin, PinOff, Clock,
   ChevronDown, RotateCcw, AlertTriangle, Server,
-  Eye, Network, Wifi, Layers,
+  Eye, Network, Wifi, Layers, Tag,
   ArrowDown, ArrowUp, ArrowRightLeft, ArrowLeftRight, ShieldCheck,
 } from 'lucide-react'
 import { useT } from '../context/ThemeContext'
@@ -509,10 +509,11 @@ function VisibilitySection({ settings, save }) {
 // ── Readiness section ─────────────────────────────────────────────────────────
 
 const READINESS_GROUP_OPTIONS = [
-  { value: 'Criticality', label: 'By Criticality', desc: 'Critical → High → Medium → Low' },
-  { value: 'Team',        label: 'By Team',         desc: 'Group by owning team' },
-  { value: 'Datacenter',  label: 'By Datacenter',   desc: 'Group by server / datacenter' },
-  { value: 'None',        label: 'No Grouping',      desc: 'Flat list of all applications' },
+  { value: 'Criticality', label: 'By Criticality',      desc: 'Critical → High → Medium → Low' },
+  { value: 'Team',        label: 'By Team',              desc: 'Group by owning team' },
+  { value: 'Datacenter',  label: 'By Datacenter',        desc: 'Group by server / datacenter' },
+  { value: 'Type',        label: 'By Application Type',  desc: 'Customer-Facing, ERP, Banking, etc.' },
+  { value: 'None',        label: 'No Grouping',          desc: 'Flat list of all applications' },
 ]
 
 function ReadinessSection({ settings, save }) {
@@ -550,6 +551,135 @@ function ReadinessSection({ settings, save }) {
           ))}
         </div>
       </div>
+    </Section>
+  )
+}
+
+// ── App Metadata section ──────────────────────────────────────────────────────
+
+const CRITICALITY_OPTIONS = ['Critical', 'High', 'Medium', 'Low']
+const META_FIELDS = [
+  { key: 'criticality',     label: 'Criticality',     type: 'select',  placeholder: '' },
+  { key: 'rpo',             label: 'RPO',              type: 'text',    placeholder: 'e.g. 15 min' },
+  { key: 'applicationType', label: 'App Type',         type: 'text',    placeholder: 'e.g. Trading' },
+  { key: 'serviceImpact',   label: 'Service Impact',   type: 'text',    placeholder: 'e.g. Full Outage' },
+  { key: 'team',            label: 'Team',             type: 'text',    placeholder: 'e.g. Trading Ops' },
+  { key: 'owner',           label: 'Owner',            type: 'email',   placeholder: 'owner@company.com' },
+]
+
+function AppMetaSection({ settings, save, appNames }) {
+  const t        = useT()
+  const meta     = settings.appMeta || {}
+  const [newApp, setNewApp] = useState('')
+
+  function update(app, field, value) {
+    save({ appMeta: { ...meta, [app]: { ...(meta[app] || {}), [field]: value } } })
+  }
+
+  function removeApp(app) {
+    const { [app]: _, ...rest } = meta
+    save({ appMeta: rest })
+  }
+
+  function addApp() {
+    const name = newApp.trim()
+    if (!name || meta[name]) return
+    save({ appMeta: { ...meta, [name]: {} } })
+    setNewApp('')
+  }
+
+  const configured = Object.keys(meta)
+
+  return (
+    <Section title="App Metadata" icon={Tag}>
+      <p className={`text-xs mb-3 ${t.textMuted}`}>
+        Tag applications with operational metadata. Used in readiness tiles and all generated reports.
+      </p>
+
+      {configured.length > 0 && (
+        <div className={`rounded-lg border ${t.border} overflow-hidden mb-3 overflow-x-auto`}>
+          <table className="w-full text-xs min-w-[640px]">
+            <thead className={t.tableHead}>
+              <tr>
+                {['Application', 'Criticality', 'RPO', 'App Type', 'Service Impact', 'Team', 'Owner', ''].map(h => (
+                  <th key={h} className={`text-left px-2.5 py-2 font-medium ${t.textMuted} whitespace-nowrap`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {configured.map(app => {
+                const m = meta[app] || {}
+                return (
+                  <tr key={app} className={`border-t ${t.border}`}>
+                    <td className={`px-2.5 py-1.5 font-semibold ${t.text} whitespace-nowrap`}>{app}</td>
+
+                    {/* Criticality — select */}
+                    <td className="px-1.5 py-1">
+                      <div className="relative">
+                        <select
+                          value={m.criticality || ''}
+                          onChange={e => update(app, 'criticality', e.target.value)}
+                          className={`w-24 px-1.5 py-1 pr-5 rounded border text-xs appearance-none ${t.inputBg} ${t.border} ${t.text} focus:outline-none focus:ring-1 focus:ring-blue-500`}
+                        >
+                          <option value="">—</option>
+                          {CRITICALITY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                        <ChevronDown className={`absolute right-1 top-1/2 -translate-y-1/2 w-2.5 h-2.5 pointer-events-none ${t.textFaint}`} />
+                      </div>
+                    </td>
+
+                    {/* Text fields */}
+                    {['rpo', 'applicationType', 'serviceImpact', 'team', 'owner'].map(field => {
+                      const f = META_FIELDS.find(x => x.key === field)
+                      return (
+                        <td key={field} className="px-1.5 py-1">
+                          <input
+                            type={f?.type === 'email' ? 'email' : 'text'}
+                            value={m[field] || ''}
+                            onChange={e => update(app, field, e.target.value)}
+                            placeholder={f?.placeholder || ''}
+                            className={`w-full min-w-[80px] px-1.5 py-1 rounded border text-xs ${t.inputBg} ${t.border} ${t.text} focus:outline-none focus:ring-1 focus:ring-blue-500`}
+                          />
+                        </td>
+                      )
+                    })}
+
+                    <td className="px-1.5 py-1">
+                      <button onClick={() => removeApp(app)} className="p-1 rounded text-red-400 hover:text-red-300">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Add row */}
+      <div className="flex gap-2">
+        <input
+          list="app-meta-names"
+          placeholder="Application name…"
+          value={newApp}
+          onChange={e => setNewApp(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && addApp()}
+          className={`flex-1 px-2 py-1.5 rounded-lg border text-xs ${t.inputBg} ${t.border} ${t.text} focus:outline-none focus:ring-1 focus:ring-blue-500`}
+        />
+        <datalist id="app-meta-names">
+          {appNames.filter(a => !meta[a]).map(a => <option key={a} value={a} />)}
+        </datalist>
+        <button
+          onClick={addApp}
+          className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white"
+        >
+          Add
+        </button>
+      </div>
+      {configured.length === 0 && (
+        <p className={`text-xs mt-2 ${t.textFaint}`}>No applications tagged yet. Type a name above and click Add.</p>
+      )}
     </Section>
   )
 }
@@ -600,6 +730,7 @@ export default function SettingsPanel({ onClose, appNames = [] }) {
           <ConnectionSection settings={settings} save={save} />
           <VisibilitySection settings={settings} save={save} />
           <ReadinessSection  settings={settings} save={save} />
+          <AppMetaSection    settings={settings} save={save} appNames={appNames} />
           <BrandingSection   settings={settings} save={save} />
           <SlaSection settings={settings} saveSla={saveSla} appNames={appNames} />
           <TimezoneSection settings={settings} save={save} />

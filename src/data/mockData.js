@@ -8,6 +8,7 @@ function phase(overrides) {
   return {
     jobId: null, name: null, folder: null, status: 'Executing', held: false,
     startTimeISO: null, endTimeISO: null, estEndISO: null,
+    hasSLA: true,
     rtoTargetMins: 30, elapsedMins: 12, rtoPct: 40,
     rtoStatus: 'On Track', rtoBreached: false, logURI: null,
     totalSteps: 0, completedSteps: 0, failedSteps: 0,
@@ -41,219 +42,159 @@ function step(overrides) {
 
 function logLine(time, level, msg) { return { time, level, msg } }
 
-// ─── CRM Readiness — 2 folder runs ───────────────────────────────────────────
-const crmFolderRuns = [
-  folderRun({
-    runId: 'IN01:14ff5-R1', runNo: 1,
-    folder: 'mha_DRM_CRM_PRE_CHECKS',
-    status: 'Ended OK',
-    startTimeISO: ago(6), endTimeISO: ago(3),
-    steps: [
-      step({ jobId: 'IN01:14ff5-01', name: 'CHECK-DB-CONNECTIVITY',    status: 'Ended OK',     startTimeISO: ago(6), endTimeISO: ago(5), duration: '00:01:02', log: [logLine(ago(6),'INFO','Connecting to DR Oracle 10.20.1.45:1521'), logLine(ago(5),'SUCCESS','Connected. Latency: 4ms')] }),
-      step({ jobId: 'IN01:14ff5-02', name: 'VALIDATE-SCHEMA-VERSION',  status: 'Ended OK',     startTimeISO: ago(5), endTimeISO: ago(4), duration: '00:00:48', log: [logLine(ago(5),'INFO','Comparing schema PROD vs DR'), logLine(ago(4),'SUCCESS','Schema v42.3.1 — match confirmed')] }),
-      step({ jobId: 'IN01:14ff5-03', name: 'CHECK-APP-SERVICES',       status: 'Ended OK',     startTimeISO: ago(4), endTimeISO: ago(3), duration: '00:01:15', log: [logLine(ago(4),'INFO','Pinging 6 application services'), logLine(ago(3),'SUCCESS','6/6 services healthy')] }),
-    ],
-    log: [
-      logLine(ago(6), 'INFO',    'Folder run 1 started: PRE_CHECKS'),
-      logLine(ago(5), 'SUCCESS', 'DB connectivity: PASS'),
-      logLine(ago(4), 'SUCCESS', 'Schema validation: PASS'),
-      logLine(ago(3), 'SUCCESS', 'App services: PASS — folder completed OK'),
-    ],
-  }),
-  folderRun({
-    runId: 'IN01:14ff5-R2', runNo: 2,
-    folder: 'mha_DRM_CRM_DATA_INTEGRITY',
-    status: 'Executing',
-    startTimeISO: ago(2), endTimeISO: null,
-    steps: [
-      step({ jobId: 'IN01:14ff5-04', name: 'VERIFY-DATA-REPLICATION', status: 'Executing',    startTimeISO: ago(2), endTimeISO: null,   duration: null,       log: [logLine(ago(2),'INFO','Replication lag check started'), logLine(ago(1),'INFO','DataGuard lag: 14s'), logLine(ago(0),'WARN','Lag >10s threshold — monitoring')] }),
-      step({ jobId: 'IN01:14ff5-05', name: 'CHECK-NETWORK-ROUTES',   status: 'Waiting',      startTimeISO: null,   endTimeISO: null,   duration: null,       log: [] }),
-      step({ jobId: 'IN01:14ff5-06', name: 'VALIDATE-SSL-CERTS',     status: 'Waiting',      startTimeISO: null,   endTimeISO: null,   duration: null,       log: [] }),
-    ],
-    log: [
-      logLine(ago(2), 'INFO', 'Folder run 2 started: DATA_INTEGRITY'),
-      logLine(ago(1), 'WARN', 'DataGuard replication lag: 14s (threshold: 10s)'),
-      logLine(ago(0), 'INFO', 'Network routes and SSL checks: pending'),
-    ],
-  }),
+// ─── Run history entry (past completed run summaries) ────────────────────────
+function runHist(overrides) {
+  return { runNo: 1, runId: null, runDate: null, status: 'Ended OK', durationMins: 20, totalSteps: 0, completedSteps: 0, failedSteps: 0, ...overrides }
+}
+
+const cortexRunHistory = [
+  runHist({ runNo:1, runId:'CTX-RH-01', runDate: ago(21*24*60), status:'Ended OK',     durationMins:14, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:2, runId:'CTX-RH-02', runDate: ago(14*24*60), status:'Ended OK',     durationMins:18, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:3, runId:'CTX-RH-03', runDate: ago(7*24*60),  status:'Ended Not OK', durationMins:22, totalSteps:7, completedSteps:6, failedSteps:1 }),
+  runHist({ runNo:4, runId:'CTX-RH-04', runDate: ago(1*24*60),  status:'Ended OK',     durationMins:16, totalSteps:7, completedSteps:7, failedSteps:0 }),
 ]
 
-// ─── Trading Portal Readiness — 2 folder runs ────────────────────────────────
-const tradingFolderRuns = [
-  folderRun({
-    runId: 'IN01:14ffx-R1', runNo: 1,
-    folder: 'mha_DRM_TRD_MARKET_DATA',
-    status: 'Ended OK',
-    startTimeISO: ago(5), endTimeISO: ago(3),
-    steps: [
-      step({ jobId: 'IN01:14ffx-01', name: 'CHECK-MARKET-FEED',      status: 'Ended OK',     startTimeISO: ago(5), endTimeISO: ago(4), duration: '00:00:55', log: [logLine(ago(5),'INFO','Testing Bloomberg feed'), logLine(ago(4),'SUCCESS','Feed connected. Latency: 2ms')] }),
-      step({ jobId: 'IN01:14ffx-02', name: 'CHECK-RISK-ENGINE',      status: 'Ended OK',     startTimeISO: ago(4), endTimeISO: ago(3), duration: '00:01:08', log: [logLine(ago(4),'INFO','Risk engine health check'), logLine(ago(3),'SUCCESS','VaR test passed')] }),
-    ],
-    log: [
-      logLine(ago(5), 'INFO',    'Folder run 1 started: MARKET_DATA'),
-      logLine(ago(4), 'SUCCESS', 'Market feed: PASS'),
-      logLine(ago(3), 'SUCCESS', 'Risk engine: PASS — folder completed OK'),
-    ],
-  }),
-  folderRun({
-    runId: 'IN01:14ffx-R2', runNo: 2,
-    folder: 'mha_DRM_TRD_SYSTEMS',
-    status: 'Ended Not OK',
-    startTimeISO: ago(3), endTimeISO: ago(0),
-    steps: [
-      step({ jobId: 'IN01:14ffx-03', name: 'VALIDATE-POSITION-DATA', status: 'Ended Not OK', startTimeISO: ago(3), endTimeISO: ago(2), duration: '00:01:22', log: [logLine(ago(3),'INFO','Comparing position records PROD vs DR'), logLine(ago(2),'ERROR','Mismatch: PROD=14,382 DR=14,201. Delta=181 records')] }),
-      step({ jobId: 'IN01:14ffx-04', name: 'VERIFY-OMS-GATEWAY',    status: 'Ended Not OK', startTimeISO: ago(2), endTimeISO: ago(1), duration: '00:00:38', log: [logLine(ago(2),'INFO','Testing FIX gateway 10.20.2.88:4001'), logLine(ago(1),'ERROR','Connection refused. Failover OMS also unreachable.')] }),
-      step({ jobId: 'IN01:14ffx-05', name: 'CHECK-SETTLEMENT-SVC',  status: 'Executing',    startTimeISO: ago(0), endTimeISO: null,   duration: null,       log: [logLine(ago(0),'INFO','Settlement service check in progress')] }),
-    ],
-    log: [
-      logLine(ago(3), 'INFO',  'Folder run 2 started: SYSTEMS'),
-      logLine(ago(2), 'ERROR', 'FAIL: Position data mismatch (181 records delta)'),
-      logLine(ago(1), 'ERROR', 'FAIL: OMS FIX gateway unreachable'),
-      logLine(ago(0), 'INFO',  'Settlement service check in progress...'),
-    ],
-  }),
+const murexRunHistory = [
+  runHist({ runNo:1, runId:'MRX-RH-01', runDate: ago(21*24*60), status:'Ended OK',     durationMins:12, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:2, runId:'MRX-RH-02', runDate: ago(14*24*60), status:'Ended Not OK', durationMins:18, totalSteps:7, completedSteps:5, failedSteps:2 }),
+  runHist({ runNo:3, runId:'MRX-RH-03', runDate: ago(7*24*60),  status:'Ended OK',     durationMins:15, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:4, runId:'MRX-RH-04', runDate: ago(1*24*60),  status:'Ended Not OK', durationMins:20, totalSteps:7, completedSteps:5, failedSteps:2 }),
 ]
 
-// ─── SAP ERP Readiness — 3 folder runs (all OK) ──────────────────────────────
-const sapFolderRuns = [
-  folderRun({
-    runId: 'IN01:1500b-R1', runNo: 1,
-    folder: 'mha_DRM_SAP_INSTANCE',
-    status: 'Ended OK',
-    startTimeISO: ago(25), endTimeISO: ago(20),
-    steps: [
-      step({ jobId: 'IN01:1500b-01', name: 'CHECK-SAP-INSTANCE',      status: 'Ended OK', startTimeISO: ago(25), endTimeISO: ago(23), duration: '00:02:10', log: [logLine(ago(25),'INFO','SAP DR instance health check'), logLine(ago(23),'SUCCESS','SAP ABAP stack responding SM51 OK')] }),
-      step({ jobId: 'IN01:1500b-02', name: 'VALIDATE-HANA-REPLICATION',status: 'Ended OK', startTimeISO: ago(23), endTimeISO: ago(20), duration: '00:03:05', log: [logLine(ago(23),'INFO','HANA system replication status check'), logLine(ago(22),'INFO','Mode: SYNC. Status: ACTIVE'), logLine(ago(20),'SUCCESS','Replication lag: 0s')] }),
-    ],
-    log: [
-      logLine(ago(25), 'INFO',    'Folder run 1 started: SAP_INSTANCE'),
-      logLine(ago(23), 'SUCCESS', 'SAP instance: PASS'),
-      logLine(ago(20), 'SUCCESS', 'HANA replication: PASS (lag 0s) — folder completed OK'),
-    ],
-  }),
-  folderRun({
-    runId: 'IN01:1500b-R2', runNo: 2,
-    folder: 'mha_DRM_SAP_INTERFACES',
-    status: 'Ended OK',
-    startTimeISO: ago(20), endTimeISO: ago(12),
-    steps: [
-      step({ jobId: 'IN01:1500b-03', name: 'CHECK-RFC-CONNECTIONS',   status: 'Ended OK', startTimeISO: ago(20), endTimeISO: ago(17), duration: '00:03:00', log: [logLine(ago(20),'INFO','Testing 12 RFC destinations'), logLine(ago(17),'SUCCESS','12/12 RFC connections healthy')] }),
-      step({ jobId: 'IN01:1500b-04', name: 'CHECK-PIIPO-CHANNELS',   status: 'Ended OK', startTimeISO: ago(17), endTimeISO: ago(12), duration: '00:05:12', log: [logLine(ago(17),'INFO','PI/PO integration channels check'), logLine(ago(12),'SUCCESS','24/24 channels active')] }),
-    ],
-    log: [
-      logLine(ago(20), 'INFO',    'Folder run 2 started: SAP_INTERFACES'),
-      logLine(ago(17), 'SUCCESS', 'RFC connections: PASS (12/12)'),
-      logLine(ago(12), 'SUCCESS', 'PI/PO channels: PASS (24/24) — folder completed OK'),
-    ],
-  }),
-  folderRun({
-    runId: 'IN01:1500b-R3', runNo: 3,
-    folder: 'mha_DRM_SAP_BATCH',
-    status: 'Ended OK',
-    startTimeISO: ago(12), endTimeISO: ago(5),
-    steps: [
-      step({ jobId: 'IN01:1500b-05', name: 'VALIDATE-BATCH-JOBS',    status: 'Ended OK', startTimeISO: ago(12), endTimeISO: ago(9),  duration: '00:03:00', log: [logLine(ago(12),'INFO','SM36 batch schedule check'), logLine(ago(9),'SUCCESS','86 jobs transferred to DR')] }),
-      step({ jobId: 'IN01:1500b-06', name: 'CHECK-PRINT-SPOOL',      status: 'Ended OK', startTimeISO: ago(9),  endTimeISO: ago(5),  duration: '00:04:00', log: [logLine(ago(9),'INFO','SPAD print spool check'), logLine(ago(5),'SUCCESS','8/8 printers active')] }),
-    ],
-    log: [
-      logLine(ago(12), 'INFO',    'Folder run 3 started: SAP_BATCH'),
-      logLine(ago(9),  'SUCCESS', 'Batch jobs: PASS (86 transferred)'),
-      logLine(ago(5),  'SUCCESS', 'Print spool: PASS — folder completed OK. ALL CHECKS PASSED.'),
-    ],
-  }),
+const t24RunHistory = [
+  runHist({ runNo:1, runId:'T24-RH-01', runDate: ago(28*24*60), status:'Ended OK', durationMins:22, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:2, runId:'T24-RH-02', runDate: ago(21*24*60), status:'Ended OK', durationMins:20, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:3, runId:'T24-RH-03', runDate: ago(14*24*60), status:'Ended OK', durationMins:19, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:4, runId:'T24-RH-04', runDate: ago(7*24*60),  status:'Ended OK', durationMins:21, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:5, runId:'T24-RH-05', runDate: ago(1*24*60),  status:'Ended OK', durationMins:20, totalSteps:7, completedSteps:7, failedSteps:0 }),
 ]
 
-// ─── Core Banking — 3 folder runs, 1 has failure ─────────────────────────────
-const cbsFolderRuns = [
-  folderRun({
-    runId: 'IN01:1501b-R1', runNo: 1,
-    folder: 'mha_DRM_CBS_CORE',
-    status: 'Ended OK',
-    startTimeISO: ago(35), endTimeISO: ago(24),
-    steps: [
-      step({ jobId: 'IN01:1501b-01', name: 'CHECK-T24-CONNECTIVITY', status: 'Ended OK', startTimeISO: ago(35), endTimeISO: ago(32), duration: '00:03:00', log: [logLine(ago(35),'INFO','T24 DR instance health check'), logLine(ago(32),'SUCCESS','T24 responding on port 9099')] }),
-      step({ jobId: 'IN01:1501b-02', name: 'VALIDATE-EOD-POSITION',  status: 'Ended OK', startTimeISO: ago(32), endTimeISO: ago(24), duration: '00:08:00', log: [logLine(ago(32),'INFO','Comparing GL balances PROD vs DR'), logLine(ago(24),'SUCCESS','GL balances match. Total: $4.2B')] }),
-    ],
-    log: [
-      logLine(ago(35), 'INFO',    'Folder run 1 started: CBS_CORE'),
-      logLine(ago(32), 'SUCCESS', 'T24 connectivity: PASS'),
-      logLine(ago(24), 'SUCCESS', 'EOD GL position: PASS — folder completed OK'),
-    ],
-  }),
-  folderRun({
-    runId: 'IN01:1501b-R2', runNo: 2,
-    folder: 'mha_DRM_CBS_PAYMENTS',
-    status: 'Ended Not OK',
-    startTimeISO: ago(24), endTimeISO: ago(12),
-    steps: [
-      step({ jobId: 'IN01:1501b-03', name: 'CHECK-SWIFT-GATEWAY',    status: 'Ended Not OK', startTimeISO: ago(24), endTimeISO: ago(20), duration: '00:04:00', log: [logLine(ago(24),'INFO','SWIFT gateway DR connectivity test'), logLine(ago(22),'WARN','Primary SWIFT endpoint timeout'), logLine(ago(20),'ERROR','FAIL: DR BIC not activated. Contact SWIFT CSC.')] }),
-      step({ jobId: 'IN01:1501b-04', name: 'CHECK-ATM-SWITCH',       status: 'Ended OK',     startTimeISO: ago(20), endTimeISO: ago(16), duration: '00:04:00', log: [logLine(ago(20),'INFO','ATM switch failover test'), logLine(ago(16),'SUCCESS','248 ATMs redirected to DR')] }),
-      step({ jobId: 'IN01:1501b-05', name: 'CHECK-MOBILE-BANKING',   status: 'Ended OK',     startTimeISO: ago(16), endTimeISO: ago(12), duration: '00:04:00', log: [logLine(ago(16),'INFO','Mobile banking API gateway check'), logLine(ago(12),'SUCCESS','API gateway active. Push notifications OK')] }),
-    ],
-    log: [
-      logLine(ago(24), 'INFO',  'Folder run 2 started: CBS_PAYMENTS'),
-      logLine(ago(20), 'ERROR', 'FAIL: SWIFT DR BIC not activated'),
-      logLine(ago(16), 'SUCCESS','ATM switch: PASS (248 ATMs)'),
-      logLine(ago(12), 'SUCCESS','Mobile banking: PASS — folder completed with 1 failure'),
-    ],
-  }),
-  folderRun({
-    runId: 'IN01:1501b-R3', runNo: 3,
-    folder: 'mha_DRM_CBS_REPORTING',
-    status: 'Ended OK',
-    startTimeISO: ago(12), endTimeISO: ago(4),
-    steps: [
-      step({ jobId: 'IN01:1501b-06', name: 'VALIDATE-CUSTOMER-DATA', status: 'Ended OK', startTimeISO: ago(12), endTimeISO: ago(8),  duration: '00:04:00', log: [logLine(ago(12),'INFO','Customer record count validation'), logLine(ago(8),'SUCCESS','1,247,832 records verified')] }),
-      step({ jobId: 'IN01:1501b-07', name: 'CHECK-REGULATORY-RPT',   status: 'Ended OK', startTimeISO: ago(8),  endTimeISO: ago(4),  duration: '00:04:00', log: [logLine(ago(8),'INFO','CBB reporting gateway check'), logLine(ago(4),'SUCCESS','Reporting gateway accessible')] }),
-    ],
-    log: [
-      logLine(ago(12), 'INFO',    'Folder run 3 started: CBS_REPORTING'),
-      logLine(ago(8),  'SUCCESS', 'Customer data: PASS (1.2M records)'),
-      logLine(ago(4),  'SUCCESS', 'Regulatory reporting: PASS — folder completed OK'),
-    ],
-  }),
+const calypsoRunHistory = [
+  runHist({ runNo:1, runId:'CAL-RH-01', runDate: ago(28*24*60), status:'Ended OK',     durationMins:32, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:2, runId:'CAL-RH-02', runDate: ago(21*24*60), status:'Ended OK',     durationMins:35, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:3, runId:'CAL-RH-03', runDate: ago(14*24*60), status:'Ended Not OK', durationMins:38, totalSteps:7, completedSteps:6, failedSteps:1 }),
+  runHist({ runNo:4, runId:'CAL-RH-04', runDate: ago(7*24*60),  status:'Ended Not OK', durationMins:31, totalSteps:7, completedSteps:6, failedSteps:1 }),
 ]
 
-// ─── HR Portal — 1 folder run ────────────────────────────────────────────────
-const hrFolderRuns = [
-  folderRun({
-    runId: 'IN01:1502b-R1', runNo: 1,
-    folder: 'mha_DRM_HR_CHECKS',
-    status: 'Ended OK',
-    startTimeISO: ago(12), endTimeISO: ago(4),
-    steps: [
-      step({ jobId: 'IN01:1502b-01', name: 'CHECK-HRMS-INSTANCE',  status: 'Ended OK', startTimeISO: ago(12), endTimeISO: ago(10), duration: '00:02:00', log: [logLine(ago(12),'INFO','HRMS DR instance check'), logLine(ago(10),'SUCCESS','HRMS web portal accessible')] }),
-      step({ jobId: 'IN01:1502b-02', name: 'VALIDATE-PAYROLL-DATA',status: 'Ended OK', startTimeISO: ago(10), endTimeISO: ago(7),  duration: '00:03:00', log: [logLine(ago(10),'INFO','Payroll record validation'), logLine(ago(7),'SUCCESS','3,412 employee records verified')] }),
-      step({ jobId: 'IN01:1502b-03', name: 'CHECK-AD-SYNC',        status: 'Ended OK', startTimeISO: ago(7),  endTimeISO: ago(4),  duration: '00:03:00', log: [logLine(ago(7),'INFO','Active Directory sync status'), logLine(ago(4),'SUCCESS','AD sync current — last sync 4 min ago')] }),
-    ],
-    log: [
-      logLine(ago(12), 'INFO',    'Folder run 1 started: HR_CHECKS'),
-      logLine(ago(10), 'SUCCESS', 'HRMS instance: PASS'),
-      logLine(ago(7),  'SUCCESS', 'Payroll data: PASS (3,412 records)'),
-      logLine(ago(4),  'SUCCESS', 'AD sync: PASS — folder completed OK. ALL CHECKS PASSED.'),
-    ],
-  }),
+const kondorRunHistory = [
+  runHist({ runNo:1, runId:'KND-RH-01', runDate: ago(21*24*60), status:'Ended OK', durationMins:10, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:2, runId:'KND-RH-02', runDate: ago(14*24*60), status:'Ended OK', durationMins:9,  totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:3, runId:'KND-RH-03', runDate: ago(7*24*60),  status:'Ended OK', durationMins:8,  totalSteps:7, completedSteps:7, failedSteps:0 }),
 ]
 
-// ─── Reporting Suite — 1 folder run with partial failure ─────────────────────
-const rptFolderRuns = [
-  folderRun({
-    runId: 'IN01:1503b-R1', runNo: 1,
-    folder: 'mha_DRM_RPT_CHECKS',
-    status: 'Ended Not OK',
-    startTimeISO: ago(10), endTimeISO: ago(2),
-    steps: [
-      step({ jobId: 'IN01:1503b-01', name: 'CHECK-TABLEAU-SERVER',   status: 'Ended OK',     startTimeISO: ago(10), endTimeISO: ago(8), duration: '00:02:00', log: [logLine(ago(10),'INFO','Tableau DR server check'), logLine(ago(8),'SUCCESS','Tableau Server 2024.1 responding')] }),
-      step({ jobId: 'IN01:1503b-02', name: 'VALIDATE-DATA-SOURCES',  status: 'Ended Not OK', startTimeISO: ago(8),  endTimeISO: ago(5), duration: '00:03:00', log: [logLine(ago(8),'INFO','Testing 14 data source connections'), logLine(ago(5),'ERROR','3/14 unreachable: DW_PROD_REPLICA, MART_FINANCE, MART_RISK')] }),
-      step({ jobId: 'IN01:1503b-03', name: 'CHECK-SCHEDULED-REPORTS',status: 'Ended OK',     startTimeISO: ago(5),  endTimeISO: ago(2), duration: '00:03:00', log: [logLine(ago(5),'INFO','Scheduled report transfer check'), logLine(ago(2),'SUCCESS','87 reports transferred to DR Tableau')] }),
-    ],
-    log: [
-      logLine(ago(10), 'INFO',    'Folder run 1 started: RPT_CHECKS'),
-      logLine(ago(8),  'SUCCESS', 'Tableau server: PASS'),
-      logLine(ago(5),  'ERROR',   'FAIL: 3/14 data sources unreachable'),
-      logLine(ago(2),  'SUCCESS', 'Scheduled reports: PASS — folder completed with 1 failure'),
-    ],
-  }),
+const datahubRunHistory = [
+  runHist({ runNo:1, runId:'DHB-RH-01', runDate: ago(21*24*60), status:'Ended Not OK', durationMins:12, totalSteps:7, completedSteps:6, failedSteps:1 }),
+  runHist({ runNo:2, runId:'DHB-RH-02', runDate: ago(14*24*60), status:'Ended OK',     durationMins:10, totalSteps:7, completedSteps:7, failedSteps:0 }),
+  runHist({ runNo:3, runId:'DHB-RH-03', runDate: ago(7*24*60),  status:'Ended Not OK', durationMins:14, totalSteps:7, completedSteps:6, failedSteps:1 }),
+]
+
+// Real CTM readiness step names (same set for every application)
+const READINESS_STEPS = [
+  'mha-drm-approval',
+  'mha-tssa-certificate-validity',
+  'mha-tssa-os-version',
+  'mha-tssa-port-config-file-check',
+  'mha-tssa-port-java-runtime',
+  'mha-tssa-port-reachability',
+  'mha-tssa-service-status',
+]
+
+// Build steps for a run, spacing start times evenly within a window
+function mkSteps(runId, baseAgo, windowMins) {
+  const names    = READINESS_STEPS
+  const interval = windowMins / names.length
+  return names.map((name, i) => {
+    const s = baseAgo + i * interval
+    const e = s + interval * 0.85
+    const mins = Math.floor(interval * 0.85 / 60)
+    const secs = String(Math.round((interval * 0.85) % 60)).padStart(2, '0')
+    return step({
+      jobId: `${runId}-${String(i + 1).padStart(5, '0')}`,
+      name,
+      status: 'Ended OK',
+      startTimeISO: ago(s), endTimeISO: ago(e),
+      duration: `00:0${mins}:${secs}`,
+      log: [logLine(ago(s), 'INFO', `${name} started`), logLine(ago(e), 'SUCCESS', `${name} completed OK`)],
+    })
+  })
+}
+
+// ─── Cortex — 3 runs × 7 steps ───────────────────────────────────────────────
+const cortexFolderRuns = [
+  folderRun({ runId:'0ie7m', runNo:1, folder:'mha-cortex-readiness', status:'Ended OK', startTimeISO:ago(90), endTimeISO:ago(78),
+    steps: mkSteps('0ie7m', 90, 12),
+    log:[logLine(ago(90),'INFO','Run 0ie7m started'), logLine(ago(78),'SUCCESS','Run 0ie7m completed OK')] }),
+  folderRun({ runId:'0ie95', runNo:2, folder:'mha-cortex-readiness', status:'Ended OK', startTimeISO:ago(55), endTimeISO:ago(43),
+    steps: mkSteps('0ie95', 55, 12),
+    log:[logLine(ago(55),'INFO','Run 0ie95 started'), logLine(ago(43),'SUCCESS','Run 0ie95 completed OK')] }),
+  folderRun({ runId:'0ie9g', runNo:3, folder:'mha-cortex-readiness', status:'Ended OK', startTimeISO:ago(20), endTimeISO:ago(8),
+    steps: mkSteps('0ie9g', 20, 12),
+    log:[logLine(ago(20),'INFO','Run 0ie9g started'), logLine(ago(8),'SUCCESS','Run 0ie9g completed OK')] }),
+]
+
+// ─── Murex — 3 runs × 7 steps ────────────────────────────────────────────────
+const murexFolderRuns = [
+  folderRun({ runId:'0if2a', runNo:1, folder:'mha-murex-readiness', status:'Ended OK', startTimeISO:ago(120), endTimeISO:ago(108),
+    steps: mkSteps('0if2a', 120, 12),
+    log:[logLine(ago(120),'INFO','Run 0if2a started'), logLine(ago(108),'SUCCESS','Run 0if2a completed OK')] }),
+  folderRun({ runId:'0if3c', runNo:2, folder:'mha-murex-readiness', status:'Ended OK', startTimeISO:ago(70), endTimeISO:ago(58),
+    steps: mkSteps('0if3c', 70, 12),
+    log:[logLine(ago(70),'INFO','Run 0if3c started'), logLine(ago(58),'SUCCESS','Run 0if3c completed OK')] }),
+  folderRun({ runId:'0if4d', runNo:3, folder:'mha-murex-readiness', status:'Ended OK', startTimeISO:ago(25), endTimeISO:ago(13),
+    steps: mkSteps('0if4d', 25, 12),
+    log:[logLine(ago(25),'INFO','Run 0if4d started'), logLine(ago(13),'SUCCESS','Run 0if4d completed OK')] }),
+]
+
+// ─── T24 — 3 runs × 7 steps ──────────────────────────────────────────────────
+const t24FolderRuns = [
+  folderRun({ runId:'0ig1a', runNo:1, folder:'mha-t24-readiness', status:'Ended OK', startTimeISO:ago(180), endTimeISO:ago(168),
+    steps: mkSteps('0ig1a', 180, 12),
+    log:[logLine(ago(180),'INFO','Run 0ig1a started'), logLine(ago(168),'SUCCESS','Run 0ig1a completed OK')] }),
+  folderRun({ runId:'0ig2b', runNo:2, folder:'mha-t24-readiness', status:'Ended OK', startTimeISO:ago(90), endTimeISO:ago(78),
+    steps: mkSteps('0ig2b', 90, 12),
+    log:[logLine(ago(90),'INFO','Run 0ig2b started'), logLine(ago(78),'SUCCESS','Run 0ig2b completed OK')] }),
+  folderRun({ runId:'0ig3c', runNo:3, folder:'mha-t24-readiness', status:'Ended OK', startTimeISO:ago(25), endTimeISO:ago(13),
+    steps: mkSteps('0ig3c', 25, 12),
+    log:[logLine(ago(25),'INFO','Run 0ig3c started'), logLine(ago(13),'SUCCESS','Run 0ig3c completed OK')] }),
+]
+
+// ─── Calypso — 3 runs × 7 steps ──────────────────────────────────────────────
+const calypsoFolderRuns = [
+  folderRun({ runId:'0ih1x', runNo:1, folder:'mha-calypso-readiness', status:'Ended OK', startTimeISO:ago(200), endTimeISO:ago(188),
+    steps: mkSteps('0ih1x', 200, 12),
+    log:[logLine(ago(200),'INFO','Run 0ih1x started'), logLine(ago(188),'SUCCESS','Run 0ih1x completed OK')] }),
+  folderRun({ runId:'0ih2y', runNo:2, folder:'mha-calypso-readiness', status:'Ended OK', startTimeISO:ago(90), endTimeISO:ago(78),
+    steps: mkSteps('0ih2y', 90, 12),
+    log:[logLine(ago(90),'INFO','Run 0ih2y started'), logLine(ago(78),'SUCCESS','Run 0ih2y completed OK')] }),
+  folderRun({ runId:'0ih3z', runNo:3, folder:'mha-calypso-readiness', status:'Ended OK', startTimeISO:ago(35), endTimeISO:ago(23),
+    steps: mkSteps('0ih3z', 35, 12),
+    log:[logLine(ago(35),'INFO','Run 0ih3z started'), logLine(ago(23),'SUCCESS','Run 0ih3z completed OK')] }),
+]
+
+// ─── Kondor — 3 runs × 7 steps ───────────────────────────────────────────────
+const kondorFolderRuns = [
+  folderRun({ runId:'0ij1k', runNo:1, folder:'mha-kondor-readiness', status:'Ended OK', startTimeISO:ago(120), endTimeISO:ago(108),
+    steps: mkSteps('0ij1k', 120, 12),
+    log:[logLine(ago(120),'INFO','Run 0ij1k started'), logLine(ago(108),'SUCCESS','Run 0ij1k completed OK')] }),
+  folderRun({ runId:'0ij2l', runNo:2, folder:'mha-kondor-readiness', status:'Ended OK', startTimeISO:ago(60), endTimeISO:ago(48),
+    steps: mkSteps('0ij2l', 60, 12),
+    log:[logLine(ago(60),'INFO','Run 0ij2l started'), logLine(ago(48),'SUCCESS','Run 0ij2l completed OK')] }),
+  folderRun({ runId:'0ij3m', runNo:3, folder:'mha-kondor-readiness', status:'Ended OK', startTimeISO:ago(12), endTimeISO:ago(4),
+    steps: mkSteps('0ij3m', 12, 8),
+    log:[logLine(ago(12),'INFO','Run 0ij3m started'), logLine(ago(4),'SUCCESS','Run 0ij3m completed OK')] }),
+]
+
+// ─── DataHub — 3 runs × 7 steps ──────────────────────────────────────────────
+const datahubFolderRuns = [
+  folderRun({ runId:'0ik2m', runNo:1, folder:'mha-datahub-readiness', status:'Ended OK', startTimeISO:ago(180), endTimeISO:ago(168),
+    steps: mkSteps('0ik2m', 180, 12),
+    log:[logLine(ago(180),'INFO','Run 0ik2m started'), logLine(ago(168),'SUCCESS','Run 0ik2m completed OK')] }),
+  folderRun({ runId:'0ik3n', runNo:2, folder:'mha-datahub-readiness', status:'Ended OK', startTimeISO:ago(90), endTimeISO:ago(78),
+    steps: mkSteps('0ik3n', 90, 12),
+    log:[logLine(ago(90),'INFO','Run 0ik3n started'), logLine(ago(78),'SUCCESS','Run 0ik3n completed OK')] }),
+  folderRun({ runId:'0ik4o', runNo:3, folder:'mha-datahub-readiness', status:'Ended OK', startTimeISO:ago(20), endTimeISO:ago(8),
+    steps: mkSteps('0ik4o', 20, 12),
+    log:[logLine(ago(20),'INFO','Run 0ik4o started'), logLine(ago(8),'SUCCESS','Run 0ik4o completed OK')] }),
 ]
 
 // ─── Helper to compute step counts from folderRuns ───────────────────────────
@@ -269,63 +210,63 @@ function rdxCounts(folderRuns) {
 
 export const mockDROperations = [
   {
-    app: 'CRM', server: 'IN01',
+    app: 'Cortex', server: 'IN01',
     totalPhases: 2, completedPhases: 0, failedPhases: 0, executingPhases: 2, breachedPhases: 0,
     overallStatus: 'In Progress', drillHealth: 'On Track', completionPct: 0,
     phases: {
-      switchover: phase({ jobId: 'IN01:14fed', name: 'mha-DRM-CRM-MASTER-SWITCHOVER', folder: 'mha-DRM-CRM-MASTER-SWITCHOVER', status: 'Executing', startTimeISO: ago(7), estEndISO: from(3), rtoTargetMins: 10, elapsedMins: 7, rtoPct: 70, rtoStatus: 'At Risk' }),
+      switchover: phase({ jobId: 'IN01:14fed', name: 'mha-DRM-CORTEX-MASTER-SWITCHOVER', folder: 'mha-DRM-CORTEX-MASTER-SWITCHOVER', status: 'Executing', startTimeISO: ago(7), estEndISO: from(3), rtoTargetMins: 10, elapsedMins: 7, rtoPct: 70, rtoStatus: 'At Risk' }),
       switchback: null,
-      readiness: phase({ jobId: 'IN01:14ff5', name: 'mha_DRM_CRM_READINESS', folder: 'mha_DRM_CRM_READINESS', status: 'Executing', startTimeISO: ago(6), estEndISO: from(46), rtoTargetMins: 52, elapsedMins: 6, rtoPct: 12, rtoStatus: 'On Track', ...rdxCounts(crmFolderRuns), folderRuns: crmFolderRuns }),
+      readiness: phase({ hasSLA: false, jobId: 'IN01:14ff5', name: 'mha_DRM_CORTEX_READINESS', folder: 'mha-cortex-readiness', startTimeISO: ago(90), endTimeISO: ago(8), rtoTargetMins: 52, elapsedMins: 82, rtoPct: 100, rtoStatus: 'Met', ...rdxCounts(cortexFolderRuns), folderRuns: cortexFolderRuns, runHistory: cortexRunHistory }),
     },
   },
   {
-    app: 'Trading Portal', server: 'IN01',
+    app: 'Murex', server: 'IN01',
     totalPhases: 3, completedPhases: 0, failedPhases: 0, executingPhases: 3, breachedPhases: 0,
     overallStatus: 'In Progress', drillHealth: 'On Track', completionPct: 0,
     phases: {
-      switchover: phase({ jobId: 'IN01:14fct', name: 'mha-DRM-MASTER-SWITCHOVER', folder: 'mha-DRM-MASTER-SWITCHOVER', status: 'Executing', startTimeISO: ago(13), estEndISO: from(3), rtoTargetMins: 16, elapsedMins: 13, rtoPct: 81, rtoStatus: 'At Risk' }),
-      switchback: phase({ jobId: 'IN01:14fdl', name: 'ARB_DRM_MASTER_SWITCHBACK', folder: 'ARB_DRM_MASTER_SWITCHBACK', status: 'Executing', startTimeISO: ago(9), estEndISO: from(47), rtoTargetMins: 56, elapsedMins: 9, rtoPct: 16, rtoStatus: 'On Track' }),
-      readiness: phase({ jobId: 'IN01:14ffx', name: 'mha_DRM_TRADING-PORTAL_READINESS', folder: 'mha_DRM_TRADING-PORTAL_READINESS', startTimeISO: ago(5), endTimeISO: ago(0), rtoTargetMins: 51, elapsedMins: 5, rtoPct: 10, rtoStatus: 'On Track', ...rdxCounts(tradingFolderRuns), folderRuns: tradingFolderRuns }),
+      switchover: phase({ jobId: 'IN01:14fct', name: 'mha-DRM-MUREX-MASTER-SWITCHOVER', folder: 'mha-DRM-MUREX-MASTER-SWITCHOVER', status: 'Executing', startTimeISO: ago(13), estEndISO: from(3), rtoTargetMins: 16, elapsedMins: 13, rtoPct: 81, rtoStatus: 'At Risk' }),
+      switchback: phase({ jobId: 'IN01:14fdl', name: 'mha-DRM-MUREX-MASTER-SWITCHBACK', folder: 'mha-DRM-MUREX-MASTER-SWITCHBACK', status: 'Executing', startTimeISO: ago(9), estEndISO: from(47), rtoTargetMins: 56, elapsedMins: 9, rtoPct: 16, rtoStatus: 'On Track' }),
+      readiness: phase({ hasSLA: false, jobId: 'IN01:14ffx', name: 'mha_DRM_MUREX_READINESS', folder: 'mha-murex-readiness', startTimeISO: ago(5), endTimeISO: ago(0), rtoTargetMins: 51, elapsedMins: 5, rtoPct: 10, rtoStatus: 'On Track', ...rdxCounts(murexFolderRuns), folderRuns: murexFolderRuns, runHistory: murexRunHistory }),
     },
   },
   {
-    app: 'SAP ERP', server: 'IN01',
+    app: 'T24', server: 'IN01',
     totalPhases: 2, completedPhases: 2, failedPhases: 0, executingPhases: 0, breachedPhases: 0,
     overallStatus: 'Completed', drillHealth: 'On Track', completionPct: 100,
     phases: {
-      switchover: phase({ jobId: 'IN01:1500a', name: 'mha-DRM-SAP-MASTER-SWITCHOVER', status: 'Ended OK', startTimeISO: ago(40), endTimeISO: ago(22), rtoTargetMins: 30, elapsedMins: 18, rtoPct: 60, rtoStatus: 'On Track' }),
+      switchover: phase({ jobId: 'IN01:1500a', name: 'mha-DRM-T24-MASTER-SWITCHOVER', status: 'Ended OK', startTimeISO: ago(40), endTimeISO: ago(22), rtoTargetMins: 30, elapsedMins: 18, rtoPct: 60, rtoStatus: 'On Track' }),
       switchback: null,
-      readiness: phase({ jobId: 'IN01:1500b', name: 'mha_DRM_SAP_READINESS', startTimeISO: ago(25), endTimeISO: ago(5), rtoTargetMins: 60, elapsedMins: 20, rtoPct: 33, rtoStatus: 'On Track', ...rdxCounts(sapFolderRuns), folderRuns: sapFolderRuns }),
+      readiness: phase({ hasSLA: false, jobId: 'IN01:1500b', name: 'mha_DRM_T24_READINESS', folder: 'mha-t24-readiness', startTimeISO: ago(25), endTimeISO: ago(5), rtoTargetMins: 60, elapsedMins: 20, rtoPct: 33, rtoStatus: 'On Track', ...rdxCounts(t24FolderRuns), folderRuns: t24FolderRuns, runHistory: t24RunHistory }),
     },
   },
   {
-    app: 'Core Banking', server: 'IN01',
+    app: 'Calypso', server: 'IN01',
     totalPhases: 2, completedPhases: 0, failedPhases: 1, executingPhases: 0, breachedPhases: 0,
     overallStatus: 'In Progress', drillHealth: 'At Risk', completionPct: 71,
     phases: {
-      switchover: phase({ jobId: 'IN01:1501a', name: 'mha-DRM-CBS-MASTER-SWITCHOVER', status: 'Ended OK', startTimeISO: ago(45), endTimeISO: ago(20), rtoTargetMins: 25, elapsedMins: 25, rtoPct: 100, rtoStatus: 'Met' }),
+      switchover: phase({ jobId: 'IN01:1501a', name: 'mha-DRM-CALYPSO-MASTER-SWITCHOVER', status: 'Ended OK', startTimeISO: ago(45), endTimeISO: ago(20), rtoTargetMins: 25, elapsedMins: 25, rtoPct: 100, rtoStatus: 'Met' }),
       switchback: null,
-      readiness: phase({ jobId: 'IN01:1501b', name: 'mha_DRM_CBS_READINESS', startTimeISO: ago(35), endTimeISO: ago(4), rtoTargetMins: 45, elapsedMins: 31, rtoPct: 69, rtoStatus: 'On Track', ...rdxCounts(cbsFolderRuns), folderRuns: cbsFolderRuns }),
+      readiness: phase({ hasSLA: false, jobId: 'IN01:1501b', name: 'mha_DRM_CALYPSO_READINESS', folder: 'mha-calypso-readiness', startTimeISO: ago(35), endTimeISO: ago(4), rtoTargetMins: 45, elapsedMins: 31, rtoPct: 69, rtoStatus: 'On Track', ...rdxCounts(calypsoFolderRuns), folderRuns: calypsoFolderRuns, runHistory: calypsoRunHistory }),
     },
   },
   {
-    app: 'HR Portal', server: 'IN01',
+    app: 'Kondor', server: 'IN01',
     totalPhases: 1, completedPhases: 1, failedPhases: 0, executingPhases: 0, breachedPhases: 0,
     overallStatus: 'Completed', drillHealth: 'On Track', completionPct: 100,
     phases: {
-      switchover: phase({ jobId: 'IN01:1502a', name: 'mha-DRM-HR-SWITCHOVER', status: 'Ended OK', startTimeISO: ago(20), endTimeISO: ago(10), rtoTargetMins: 15, elapsedMins: 10, rtoPct: 67, rtoStatus: 'On Track' }),
+      switchover: phase({ jobId: 'IN01:1502a', name: 'mha-DRM-KONDOR-SWITCHOVER', status: 'Ended OK', startTimeISO: ago(20), endTimeISO: ago(10), rtoTargetMins: 15, elapsedMins: 10, rtoPct: 67, rtoStatus: 'On Track' }),
       switchback: null,
-      readiness: phase({ jobId: 'IN01:1502b', name: 'mha_DRM_HR_READINESS', startTimeISO: ago(12), endTimeISO: ago(4), rtoTargetMins: 20, elapsedMins: 8, rtoPct: 40, rtoStatus: 'On Track', ...rdxCounts(hrFolderRuns), folderRuns: hrFolderRuns }),
+      readiness: phase({ hasSLA: false, jobId: 'IN01:1502b', name: 'mha_DRM_KONDOR_READINESS', folder: 'mha-kondor-readiness', startTimeISO: ago(12), endTimeISO: ago(4), rtoTargetMins: 20, elapsedMins: 8, rtoPct: 40, rtoStatus: 'On Track', ...rdxCounts(kondorFolderRuns), folderRuns: kondorFolderRuns, runHistory: kondorRunHistory }),
     },
   },
   {
-    app: 'Reporting Suite', server: 'IN01',
+    app: 'DataHub', server: 'IN01',
     totalPhases: 1, completedPhases: 0, failedPhases: 1, executingPhases: 0, breachedPhases: 0,
     overallStatus: 'In Progress', drillHealth: 'At Risk', completionPct: 67,
     phases: {
       switchover: null,
       switchback: null,
-      readiness: phase({ jobId: 'IN01:1503b', name: 'mha_DRM_REPORTING_READINESS', startTimeISO: ago(10), endTimeISO: ago(2), rtoTargetMins: 30, elapsedMins: 8, rtoPct: 27, rtoStatus: 'On Track', ...rdxCounts(rptFolderRuns), folderRuns: rptFolderRuns }),
+      readiness: phase({ hasSLA: false, jobId: 'IN01:1503b', name: 'mha_DRM_DATAHUB_READINESS', folder: 'mha-datahub-readiness', startTimeISO: ago(10), endTimeISO: ago(2), rtoTargetMins: 30, elapsedMins: 8, rtoPct: 27, rtoStatus: 'On Track', ...rdxCounts(datahubFolderRuns), folderRuns: datahubFolderRuns, runHistory: datahubRunHistory }),
     },
   },
 ]
@@ -369,10 +310,10 @@ export const mockAgents = [
 ]
 
 export const mockAppMeta = {
-  'CRM':             { criticality: 'High',     team: 'CRM Team',     applicationType: 'Customer-Facing', serviceImpact: 'Customer Operations', owner: 'crm-ops@company.com'     },
-  'Trading Portal':  { criticality: 'Critical', team: 'Trading Ops',  applicationType: 'Trading',         serviceImpact: 'Revenue Critical',    owner: 'trading-dr@company.com'  },
-  'SAP ERP':         { criticality: 'Critical', team: 'ERP Team',     applicationType: 'ERP',             serviceImpact: 'Full Business Ops',   owner: 'sap-basis@company.com'   },
-  'Core Banking':    { criticality: 'Critical', team: 'Core Banking', applicationType: 'Banking',         serviceImpact: 'Full Outage',         owner: 'cbs-ops@company.com'     },
-  'HR Portal':       { criticality: 'Medium',   team: 'HR IT',        applicationType: 'Internal',        serviceImpact: 'Employee Services',   owner: 'hr-it@company.com'       },
-  'Reporting Suite': { criticality: 'Low',      team: 'BI Team',      applicationType: 'Analytics',       serviceImpact: 'Reporting Degraded',  owner: 'bi-team@company.com'     },
+  'Cortex':  { criticality: 'High',     team: 'Cortex Ops',    applicationType: 'Customer-Facing', serviceImpact: 'Customer Operations', owner: 'cortex-ops@company.com',  rpo: '1 hr'    },
+  'Murex':   { criticality: 'Critical', team: 'Trading Ops',   applicationType: 'Trading',         serviceImpact: 'Revenue Critical',    owner: 'trading-dr@company.com',  rpo: '15 min'  },
+  'T24':     { criticality: 'Critical', team: 'Core Banking',  applicationType: 'Banking',         serviceImpact: 'Full Outage',         owner: 'cbs-ops@company.com',     rpo: '5 min'   },
+  'Calypso': { criticality: 'Critical', team: 'Derivatives IT',applicationType: 'Trading',         serviceImpact: 'Derivatives Trading', owner: 'calypso-dr@company.com',  rpo: '15 min'  },
+  'Kondor':  { criticality: 'Medium',   team: 'Treasury IT',   applicationType: 'Treasury',        serviceImpact: 'Treasury Operations', owner: 'kondor-it@company.com',   rpo: '30 min'  },
+  'DataHub': { criticality: 'Low',      team: 'BI Team',       applicationType: 'Analytics',       serviceImpact: 'Reporting Degraded',  owner: 'bi-team@company.com',     rpo: '4 hr'    },
 }

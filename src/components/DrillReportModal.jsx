@@ -5,6 +5,7 @@ import {
   ChevronLeft, ChevronRight, Printer,
 } from 'lucide-react'
 import { useT } from '../context/ThemeContext'
+import { useSettings } from '../context/SettingsContext'
 import { buildReportRows, REPORT_COLUMNS } from '../utils/reportBuilder'
 import { exportDrillReportXlsx, exportDrillReportCsv } from '../utils/exportXlsx'
 
@@ -139,7 +140,7 @@ const COL_GROUPS = [
   {
     id: 'core',
     label: 'Application',
-    cols: ['#', 'Application Name', 'Criticality', 'Application Type', 'Service Impact'],
+    cols: ['#', 'Application Name', 'Criticality', 'RPO', 'Application Type', 'Service Impact', 'Team', 'Owner'],
   },
   {
     id: 'rto',
@@ -163,12 +164,13 @@ const COL_GROUPS = [
 
 export default function DrillReportModal({ operations, onClose }) {
   const t = useT()
+  const { settings } = useSettings()
   const [page,        setPage]       = useState(1)
   const [activeGroup, setActiveGroup]= useState('core')
   const [filter,      setFilter]     = useState('All')
   const tableRef = useRef(null)
 
-  const rows      = buildReportRows(operations)
+  const rows      = buildReportRows(operations, settings.appMeta || {})
   const filters   = ['All', 'PASS', 'FAIL', 'IN PROGRESS']
   const filtered  = filter === 'All' ? rows : rows.filter((r) => r['Overall Result'] === filter)
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -310,5 +312,6 @@ export default function DrillReportModal({ operations, onClose }) {
 
       </div>
     </div>
+
   )
 }

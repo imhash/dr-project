@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react'
 import { BarChart2, CheckCircle2, XCircle, AlertTriangle, Clock, EyeOff, Eye } from 'lucide-react'
 import { useT } from '../context/ThemeContext'
 import { useSettings } from '../context/SettingsContext'
+import { mockAppMeta } from '../data/mockData'
 
 const RTO_COLORS = {
   'On Track': { bar: '#4ade80', text: 'text-green-400',  bg: 'bg-green-500/10',  border: 'border-green-500/30'  },
@@ -39,7 +40,7 @@ function useLiveElapsed(startISO, isRunning) {
   return mins
 }
 
-function RtoRow({ app, phase, data }) {
+function RtoRow({ app, phase, data, rpo }) {
   const t           = useT()
   const { fmtTime } = useSettings()
   const isRunning   = data?.status === 'Executing'
@@ -52,7 +53,7 @@ function RtoRow({ app, phase, data }) {
         <td className="px-4 py-2">
           <span className={`text-xs px-2 py-0.5 rounded border border-dashed ${t.borderDash} ${t.textFaint} capitalize`}>{phase}</span>
         </td>
-        {/* <td colSpan={5} className={`px-4 py-2 text-xs italic ${t.textFaint}`}>Not configured for this application</td> */}
+        <td className={`px-4 py-2 text-xs ${t.textFaint}`}>{rpo || '—'}</td>
       </tr>
     )
   }
@@ -75,6 +76,7 @@ function RtoRow({ app, phase, data }) {
           {phase}
         </span>
       </td>
+      <td className={`px-4 py-3 text-xs font-mono ${t.textMuted}`}>{rpo || '—'}</td>
       <td className="px-4 py-3">
         <span className={`text-xs px-2 py-0.5 rounded border ${
           data.status === 'Executing'    ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400'
@@ -151,13 +153,17 @@ function SummaryStrip({ rows }) {
 
 export default function RTOValidation({ operations }) {
   const t = useT()
+  const { settings } = useSettings()
   const [hideEmpty, setHideEmpty] = useState(true)
   if (!operations?.length) return null
 
   // ── Readiness is EXCLUDED — only SLA phases have RTO rows ──
   const rows = operations.flatMap(({ app, phases }) =>
     ['switchover', 'switchback', 'failover', 'failback']
-      .map((ph) => ({ app, phase: ph, data: phases[ph] }))
+      .map((ph) => {
+        const rpo = (settings.appMeta?.[app]?.rpo) || (mockAppMeta[app]?.rpo) || ''
+        return { app, phase: ph, data: phases[ph], rpo }
+      })
   )
 
   const configuredRows = rows.filter((r) => r.data)
@@ -228,14 +234,14 @@ export default function RTOValidation({ operations }) {
         <table className="w-full text-xs min-w-[740px]">
           <thead className={`${t.tableHead} ${t.textMuted} sticky top-0`}>
             <tr>
-              {['Application', 'Phase', 'Job Status', 'Start Time', 'SLA Deadline', 'RTO Progress', 'SLA Status'].map((h) => (
+              {['Application', 'Phase', 'RPO', 'Job Status', 'Start Time', 'SLA Deadline', 'RTO Progress', 'SLA Status'].map((h) => (
                 <th key={h} className="text-left px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map(({ app, phase, data }) => (
-              <RtoRow key={`${app}-${phase}`} app={app} phase={phase} data={data} />
+            {visibleRows.map(({ app, phase, data, rpo }) => (
+              <RtoRow key={`${app}-${phase}`} app={app} phase={phase} data={data} rpo={rpo} />
             ))}
           </tbody>
         </table>

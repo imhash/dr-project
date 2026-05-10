@@ -63,10 +63,13 @@ function downtimeRange(phase) {
 // ── Main builder ─────────────────────────────────────────────────────────────
 
 /**
- * Builds a flat array of report rows — one row per application per phase.
- * Readiness rows are included but SLA/RTO columns are blank (hasSLA = false).
+ * Builds a flat array of report rows — one row per application per drill phase.
+ * Readiness is excluded — it is a pre-drill check, not a drill phase.
+ *
+ * @param {Array}  operations  — DR operations array
+ * @param {object} settingsMeta — settings.appMeta from SettingsContext (overrides config.json)
  */
-export function buildReportRows(operations) {
+export function buildReportRows(operations, settingsMeta = {}) {
   const rows = []
   let seq = 1
 
@@ -74,7 +77,6 @@ export function buildReportRows(operations) {
     const phaseEntries = [
       { key: 'switchover', label: 'Switchover' },
       { key: 'switchback', label: 'Switchback' },
-      { key: 'readiness',  label: 'Readiness'  },
       { key: 'failover',   label: 'Failover'   },
       { key: 'failback',   label: 'Failback'   },
     ]
@@ -85,7 +87,11 @@ export function buildReportRows(operations) {
 
       const downtime = downtimeRange(ph)
       const hasSLA   = ph.hasSLA === true   // false for Readiness
-      const appMeta  = getAppMeta(op.app, key)
+      // Merge: config.json base → op.meta → settings.appMeta (settings always wins)
+      const cfgMeta  = getAppMeta(op.app, key)
+      const opMeta   = op.meta || {}
+      const stgMeta  = settingsMeta[op.app] || {}
+      const appMeta  = { ...cfgMeta, ...opMeta, ...stgMeta }
 
       // RTO columns — only populated for SLA phases
       const rtoH   = hasSLA && ph.rtoTargetMins ? Math.floor(ph.rtoTargetMins / 60) : null
@@ -112,8 +118,11 @@ export function buildReportRows(operations) {
         '#':                                    seq++,
         'Application Name':                     op.app,
         'Criticality':                          resolveCriticality(appMeta, hasSLA, ph.rtoTargetMins),
-        'Application Type':                     appMeta.applicationType,
-        'Service Impact':                       appMeta.serviceImpact,
+        'Application Type':                     appMeta.applicationType || '',
+        'Service Impact':                       appMeta.serviceImpact   || '',
+        'RPO':                                  appMeta.rpo             || '',
+        'Team':                                 appMeta.team            || '',
+        'Owner':                                appMeta.owner           || '',
         'If "Others" — Please Specify':         '',
         'Dependency on Another System':         '',
         'Interdependent Systems':               '',
@@ -151,6 +160,9 @@ export const REPORT_COLUMNS = [
   { key: 'Criticality',                       label: 'Criticality',                width: 12 },
   { key: 'Application Type',                  label: 'Application Type',           width: 14 },
   { key: 'Service Impact',                    label: 'Service Impact',             width: 14 },
+  { key: 'RPO',                               label: 'RPO',                        width: 10 },
+  { key: 'Team',                              label: 'Team',                       width: 14 },
+  { key: 'Owner',                             label: 'Owner',                      width: 18 },
   { key: 'If "Others" — Please Specify',      label: 'If "Others" — Specify',      width: 18 },
   { key: 'Dependency on Another System',      label: 'Dependency?',                width: 12 },
   { key: 'Interdependent Systems',            label: 'Interdependent Systems',     width: 20 },

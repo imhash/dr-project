@@ -103,10 +103,47 @@ const FOLDER_TYPES = new Set([
   'folder', 'simplefolder', 'subfolder', 'smartfolder',
 ])
 
+/**
+ * Extract the CTM order ID from a job's jobId field.
+ * Formats seen in the wild:
+ *   "IN01:0ie7m"         → "0ie7m"   (folder entry)
+ *   "IN01:0ie7m-00001"   → "0ie7m"   (step with 5-digit job number)
+ *   "IN01:14ff5-R1"      → "14ff5"   (legacy mock format)
+ * Returns empty string when jobId is absent/unparseable.
+ */
+function extractOrderId(jobId) {
+  if (!jobId) return ''
+  const afterColon = jobId.includes(':') ? jobId.slice(jobId.indexOf(':') + 1) : jobId
+  // Strip trailing -NNNNN (5-digit job number) or -RN (legacy) suffix
+  return afterColon.replace(/-(\d{5}|R\d+)$/, '').trim()
+}
+
+/**
+ * Extract the folder-run order ID from a job's folderId field.
+ *
+ * CTM folderId encoding (from jobs/status response):
+ *   "PROD:"       → empty string — this entry IS the folder container itself
+ *   "PROD:0ifb1"  → "0ifb1"     — this entry is a step inside folder run 0ifb1
+ *
+ * Returns empty string for folder-type entries, the run order ID for steps.
+ */
+function folderRunIdFromFolderId(folderId) {
+  if (!folderId) return ''
+  const i = folderId.indexOf(':')
+  if (i < 0) return ''
+  return folderId.slice(i + 1).trim()
+}
+
+/**
+ * Returns true when a raw CTM entry is a folder/container (not an executable step).
+ * Uses folderId when present (authoritative); falls back to type-based detection.
+ */
 function isExecutableJob(raw) {
+  // folderId-based check is authoritative: "SERVER:" (nothing after colon) = folder entry
+  if (raw.folderId !== undefined) {
+    return folderRunIdFromFolderId(raw.folderId) !== ''
+  }
   const type = (raw.type || '').toLowerCase()
-  // If no type info at all, check if the job name matches its own folder name
-  // (folder entries typically have name === folder in CTM status response)
   if (!type) return raw.name !== raw.folder
   return !FOLDER_TYPES.has(type)
 }
@@ -274,10 +311,133 @@ const DR_PHASES = new Set(['switchover', 'switchback', 'readiness', 'failover', 
 const EMPTY_BY_PHASE = () => ({
   switchover: { folder: null, steps: [], folderEntries: [] },
   switchback: { folder: null, steps: [], folderEntries: [] },
-  readiness:  { folder: null, steps: [], folderEntries: [] },
+  readiness:  { folder: null, steps: [], folderEntries: [], allJobs: [] },
   failover:   { folder: null, steps: [], folderEntries: [] },
   failback:   { folder: null, steps: [], folderEntries: [] },
 })
+
+/**
+ * Build readiness phase with per-execution folderRuns.
+ *
+ * Uses the CTM folderId field to identify entry types and group steps into runs:
+ *   folderId = "SERVER:"        → folder/container entry for one execution
+ *   folderId = "SERVER:ORDERID" → step/job belonging to that execution run
+ *
+ * The folder entry's own order ID comes from its jobId field: "SERVER:ORDERID".
+ * Steps carry their parent run's order ID in folderId: "SERVER:ORDERID".
+ *
+ * Phase-level counts are taken from the MOST RECENT run only.
+ */
+function buildReadinessPhase(allJobs) {
+  if (!allJobs || allJobs.length === 0) return null
+
+  // Separate folder entries (folderId = "SERVER:") from steps (folderId = "SERVER:ORDERID")
+  const folderEntryJobs = allJobs.filter(j => folderRunIdFromFolderId(j.folderId ?? '') === '')
+  const stepJobs        = allJobs.filter(j => folderRunIdFromFolderId(j.folderId ?? '') !== '')
+
+  // Index folder entries by their own run order ID (from jobId: "SERVER:ORDERID")
+  const folderByRunId = new Map()
+  for (const f of folderEntryJobs) {
+    const runId = extractOrderId(f.jobId)
+    if (runId) folderByRunId.set(runId, f)
+  }
+
+  // Group steps by the run order ID they belong to (from folderId: "SERVER:ORDERID")
+  const stepsByRunId = new Map()
+  for (const j of stepJobs) {
+    const runId = folderRunIdFromFolderId(j.folderId)
+    if (!stepsByRunId.has(runId)) stepsByRunId.set(runId, [])
+    stepsByRunId.get(runId).push(j)
+  }
+
+  // Collect all run IDs from both folder entries and step groups
+  const allRunIds = new Set([...folderByRunId.keys(), ...stepsByRunId.keys()])
+
+  const folderRuns = []
+  for (const runId of allRunIds) {
+    const folderEntry = folderByRunId.get(runId)
+    const steps = (stepsByRunId.get(runId) || [])
+      .map(buildStep)
+      .sort((a, b) => (a.startTimeISO || '').localeCompare(b.startTimeISO || ''))
+
+    const okCount   = steps.filter(s => s.status === 'Ended OK').length
+    const failCount = steps.filter(s => s.status === 'Ended Not OK').length
+    const running   = steps.some(s => s.status === 'Executing')
+
+    // Prefer the folder entry's own status (it reflects overall run outcome in CTM)
+    const runStatus = folderEntry?.status
+      || (failCount > 0       ? 'Ended Not OK'
+         : running            ? 'Executing'
+         : okCount === steps.length && steps.length > 0 ? 'Ended OK'
+         : 'Waiting')
+
+    // Timing: prefer folder entry (it spans the whole run); fall back to step min/max
+    const feStart = folderEntry?.startTime ? parseCtmTime(folderEntry.startTime)?.toISOString() : null
+    const feEnd   = folderEntry?.endTime   ? parseCtmTime(folderEntry.endTime)?.toISOString()   : null
+    const stepStarts = steps.map(s => s.startTimeISO).filter(Boolean).sort()
+    const stepEnds   = steps.map(s => s.endTimeISO).filter(Boolean).sort()
+
+    const startTimeISO = feStart || stepStarts[0]  || null
+    const endTimeISO   = feEnd   || stepEnds.at(-1) || null
+
+    // Folder name: prefer the folder entry's own name field
+    const folderName = folderEntry?.name || folderEntry?.folder || steps[0]?.folder || runId
+
+    folderRuns.push({
+      runId,
+      runNo:  0,      // assigned after sort
+      folder: folderName,
+      status: runStatus,
+      startTimeISO,
+      endTimeISO,
+      steps,
+      log: [],
+    })
+  }
+
+  // Sort chronologically; oldest run = runNo 1
+  folderRuns.sort((a, b) => (a.startTimeISO || '').localeCompare(b.startTimeISO || ''))
+  folderRuns.forEach((r, i) => { r.runNo = i + 1 })
+
+  // Phase-level stats from the LAST run only (not aggregate)
+  const lastRun        = folderRuns.at(-1)
+  const totalSteps     = lastRun?.steps.length                                              || 0
+  const completedSteps = lastRun?.steps.filter(s => s.status === 'Ended OK').length        || 0
+  const failedSteps    = lastRun?.steps.filter(s => s.status === 'Ended Not OK').length    || 0
+  const runningSteps   = lastRun?.steps.filter(s => s.status === 'Executing').length       || 0
+  const overallStatus  = lastRun?.status || 'Waiting'
+
+  // Phase timing: from the latest folder entry (most recent execution)
+  const latestFolderEntry = [...folderByRunId.values()]
+    .sort((a, b) => (b.startTime || '').localeCompare(a.startTime || ''))[0]
+  const phaseStart  = latestFolderEntry?.startTime ? parseCtmTime(latestFolderEntry.startTime) : null
+  const phaseEnd    = latestFolderEntry?.endTime   ? parseCtmTime(latestFolderEntry.endTime)   : null
+  const now         = new Date()
+  const elapsedMins = phaseStart
+    ? Math.max(0, Math.round(((phaseEnd || now).getTime() - phaseStart.getTime()) / 60_000))
+    : 0
+
+  return {
+    jobId:         latestFolderEntry?.jobId  || '',
+    folder:        latestFolderEntry?.name   || latestFolderEntry?.folder || '',
+    status:        overallStatus,
+    startTimeISO:  phaseStart ? phaseStart.toISOString() : null,
+    endTimeISO:    phaseEnd   ? phaseEnd.toISOString()   : null,
+    estEndISO:     null,
+    hasSLA:        false,
+    rtoTargetMins: null,
+    elapsedMins,
+    rtoPct:        null,
+    rtoStatus:     'N/A',
+    rtoBreached:   false,
+    totalSteps,
+    completedSteps,
+    failedSteps,
+    runningSteps,
+    folderRuns,
+    steps: lastRun?.steps || [],
+  }
+}
 
 /**
  * BFS traversal: collect all executable leaf jobs + folder entries inside a CTM folder.
@@ -360,16 +520,28 @@ function rawJobsToDROperations(statuses, slaConfig = {}) {
     const phase = (folderEntry.subApplication || '').toLowerCase()
     if (!byApp[app]) byApp[app] = { app, server: folderEntry.ctm, ...EMPTY_BY_PHASE() }
 
-    // Keep the most recent folder entry (in case of multiple runs)
-    const existing = byApp[app][phase].folder
-    if (!existing || (folderEntry.startTime || '') > (existing.startTime || '')) {
-      byApp[app][phase].folder = folderEntry
-    }
-
-    // BFS from this folder to collect leaf executable jobs + intermediate folder entries
     const { leafJobs, folderEntries } = collectLeafJobs(childrenByFolder, folderEntry.name)
-    byApp[app][phase].steps.push(...leafJobs)
-    byApp[app][phase].folderEntries.push(...folderEntries)
+
+    if (phase === 'readiness') {
+      // Readiness runs repeatedly — buildReadinessPhase groups by folderId.
+      // Push the folder entry itself + ALL collected jobs (folder entries + leaf steps).
+      // Do NOT filter here; folderId-based separation happens inside buildReadinessPhase.
+      byApp[app].readiness.allJobs.push(folderEntry, ...folderEntries, ...leafJobs)
+    } else {
+      // Non-readiness phases: keep ONLY the most recent run's steps.
+      const existing = byApp[app][phase].folder
+      const isNewer  = !existing || (folderEntry.startTime || '') > (existing.startTime || '')
+      if (isNewer) {
+        byApp[app][phase].folder       = folderEntry
+        byApp[app][phase].steps        = []   // discard older run's steps
+        byApp[app][phase].folderEntries = []
+      }
+      // Only accumulate steps when this IS the currently-tracked (latest) entry
+      if (byApp[app][phase].folder?.jobId === folderEntry.jobId) {
+        byApp[app][phase].steps.push(...leafJobs)
+        byApp[app][phase].folderEntries.push(...folderEntries)
+      }
+    }
   }
 
   // Process direct (non-folder) DR jobs — add as steps if not already collected
@@ -412,7 +584,8 @@ function rawJobsToDROperations(statuses, slaConfig = {}) {
     const phases = {
       switchover: buildPhase('switchover', getSLA('switchover')),
       switchback: buildPhase('switchback', getSLA('switchback')),
-      readiness:  buildPhase('readiness',  null),
+      // Readiness uses its own builder: groups by CTM order ID → one folderRun per execution
+      readiness:  buildReadinessPhase(entry.readiness.allJobs),
       failover:   buildPhase('failover',   getSLA('failover')),
       failback:   buildPhase('failback',   getSLA('failback')),
     }
@@ -460,29 +633,133 @@ function rawJobsToDROperations(statuses, slaConfig = {}) {
 }
 
 /**
- * @param {object} slaConfig  — from useSettings().settings.sla
- * @param {string} [server]   — optional CTM server name / ctm filter
+ * Fetch job statuses with a resilient retry for CTM SaaS 500s.
  *
- * Strategy (each tried in order, stopping at first success):
- *  1. No limit param  — lets CTM use its own default, avoids the SaaS
- *     StringIndexOutOfBoundsException triggered by explicit limit values.
- *  2. limit=500       — explicit limit, smaller batch.
- *  3. Per-phase subApplication queries — one parallel request per DR phase
- *     type; merges results. Avoids any job with malformed data outside DR scope.
+ * CTM SaaS can throw a Java StringIndexOutOfBoundsException ("begin -6, end 0…")
+ * when limit=5000 is combined with a server filter in certain API versions.
+ *
+ * Strategy (server filter is always kept — it is required):
+ *   1. limit=5000 + server  — full preferred request
+ *   2. no limit  + server   — drop limit only; CTM uses its own default page size
+ *
+ * 4xx errors propagate immediately (auth failure, endpoint not found, etc.).
  */
+async function fetchJobStatuses(server, extraParams = {}) {
+  const limit = cfg().jobsLimit || 5000
+  const mkQuery = (l) => {
+    const p = new URLSearchParams({ limit: String(l) })
+    if (server?.trim()) p.append('server', server.trim())
+    for (const [k, v] of Object.entries(extraParams)) p.append(k, v)
+    return `?${p.toString()}`
+  }
+  const attempts = [
+    () => ctmFetch(`/run/jobs/status${mkQuery(limit)}`),
+    () => {
+      // Retry without limit param on 5xx
+      const p = new URLSearchParams()
+      if (server?.trim()) p.append('server', server.trim())
+      for (const [k, v] of Object.entries(extraParams)) p.append(k, v)
+      return ctmFetch(`/run/jobs/status?${p.toString()}`)
+    },
+  ]
+
+  let lastErr
+  for (const attempt of attempts) {
+    try {
+      const data = await attempt()
+      return data.statuses || []
+    } catch (err) {
+      lastErr = err
+      if (!/CTM API 5\d\d/.test(err.message)) throw err
+    }
+  }
+  throw lastErr
+}
+
+/**
+ * Fetch readiness executions using the dedicated folder wildcard endpoint:
+ *   /run/jobs/status?limit=5000&server=PROD&folder=*readiness*
+ *
+ * Returns raw statuses grouped by application into { [app]: raw[] }.
+ * folderId="SERVER:"        → folder/container entry (one per execution)
+ * folderId="SERVER:ORDERID" → step belonging to that execution run
+ */
+async function fetchReadinessStatuses(server) {
+  return fetchJobStatuses(server, { folder: '*readiness*' })
+}
+
+/**
+ * Merge readiness phases (from dedicated endpoint) into the existing operations array.
+ * Updates or adds the readiness phase for each application found in readinessStatuses.
+ */
+function mergeReadinessIntoOps(ops, readinessStatuses) {
+  // Group readiness statuses by application
+  const byApp = new Map()
+  for (const j of readinessStatuses) {
+    const app = j.application || 'Unknown'
+    if (!byApp.has(app)) byApp.set(app, [])
+    byApp.get(app).push(j)
+  }
+
+  // Build updated ops — replace readiness phase with folderId-based version
+  const updated = ops.map(op => {
+    const jobs = byApp.get(op.app)
+    if (!jobs) return op
+    return {
+      ...op,
+      phases: {
+        ...op.phases,
+        readiness: buildReadinessPhase(jobs),
+      },
+    }
+  })
+
+  // Add apps that appear only in readiness (no DR operation in main fetch)
+  for (const [app, jobs] of byApp) {
+    if (!updated.find(op => op.app === app)) {
+      const rdx = buildReadinessPhase(jobs)
+      if (rdx) {
+        updated.push({
+          app,
+          server:          jobs[0]?.ctm || '',
+          phases:          { switchover: null, switchback: null, readiness: rdx, failover: null, failback: null },
+          totalPhases:     1,
+          completedPhases: rdx.status === 'Ended OK'     ? 1 : 0,
+          failedPhases:    rdx.status === 'Ended Not OK' ? 1 : 0,
+          executingPhases: rdx.status === 'Executing'    ? 1 : 0,
+          breachedPhases:  0,
+          overallStatus:   rdx.status === 'Ended OK' ? 'Completed' : rdx.status === 'Executing' ? 'In Progress' : 'In Progress',
+          drillHealth:     'On Track',
+          completionPct:   rdx.status === 'Ended OK' ? 100 : 0,
+        })
+      }
+    }
+  }
+
+  return updated
+}
+
 /**
  * @param {object} slaConfig  — from useSettings().settings.sla
  * @param {string} [server]   — optional CTM server name filter (e.g. 'PROD', 'DR')
- *                              Appended as ?server=NAME to the jobs/status request.
  */
 export async function fetchDROperations(slaConfig = {}, server = DEFAULT_SERVER()) {
   if (USE_MOCK()) {
     return new Promise((r) => setTimeout(() => r(mockDROperations), 450))
   }
-  const limit = cfg().jobsLimit || 5000
-  const qs = buildJobsQuery(limit, server)
-  const data = await ctmFetch(`/run/jobs/status${qs}`)
-  return rawJobsToDROperations(data.statuses || [], slaConfig)
+
+  // Fetch all jobs (switchover / switchback / failover / failback)
+  // and readiness separately using the folder wildcard for precision
+  const [allStatuses, readinessStatuses] = await Promise.all([
+    fetchJobStatuses(server),
+    fetchReadinessStatuses(server),
+  ])
+
+  // Build operations from main fetch (readiness may also be present here as fallback)
+  const ops = rawJobsToDROperations(allStatuses, slaConfig)
+
+  // Override readiness phases with the dedicated, folderId-precise version
+  return mergeReadinessIntoOps(ops, readinessStatuses)
 }
 
 // ---------- General jobs ----------
@@ -510,9 +787,8 @@ export async function fetchJobs(limit = 500, server = DEFAULT_SERVER()) {
   if (USE_MOCK()) {
     return new Promise((r) => setTimeout(() => r(mockJobs), 400))
   }
-  const qs = buildJobsQuery(limit, server)
-  const data = await ctmFetch(`/run/jobs/status${qs}`)
-  return (data.statuses || []).map(mapJob)
+  const statuses = await fetchJobStatuses(server)
+  return statuses.map(mapJob)
 }
 
 export async function fetchEnvComparison(jobs) {
