@@ -12,43 +12,48 @@
  */
 
 import { createContext, useContext, useState, useCallback } from 'react'
+import { getConfig } from '../config'
 
 const SETTINGS_KEY = 'ctm-resiliency-settings'
 
-export const DEFAULT_SETTINGS = {
-  sla: {
-    switchover: 30,
-    switchback: 60,
-    failover:   30,
-    failback:   60,
-    perApp: {},
-  },
-  timezone: (() => {
-    try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'UTC' }
-  })(),
-  pinnedApps:   [],
-  customerLogo: null,
-  customerName: '',
-  agentGroups:      {},   // legacy — kept for compatibility
-  topology: { showUnassigned: true, refreshSecs: 30 },
-  businessServices: [],  // [{ id, name, criticality, color, description, prod:[{id,server,ip,datacenter,agents:[{name,ip}]}], dr:[...] }]
-  ctmServer: '',         // optional CTM server filter (e.g. 'PROD') — appended as &server= on jobs/status calls
-  visibility: {
-    phases: {
-      switchover: true,
-      switchback: true,
-      readiness:  true,
-      failover:   true,
-      failback:   true,
+function buildDefaults() {
+  const cfg = getConfig()
+  return {
+    sla: {
+      switchover: cfg.sla?.switchover ?? 30,
+      switchback: cfg.sla?.switchback ?? 60,
+      failover:   cfg.sla?.failover   ?? 30,
+      failback:   cfg.sla?.failback   ?? 60,
+      perApp:     cfg.sla?.perApp     ?? {},
     },
-    topology:          true,
-    agentConnectivity: true,
-  },
-  readiness: {
-    groupBy: 'Criticality',   // Criticality | Team | Datacenter | None
-  },
-  appMeta: {},   // { [appName]: { criticality, applicationType, serviceImpact, owner, team } }
+    timezone:         cfg.timezone    || (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'UTC' } })(),
+    pinnedApps:       [],
+    customerLogo:     null,
+    customerName:     cfg.customerName     || '',
+    ctmServer:        cfg.ctmServer        || '',
+    agentGroups:      {},
+    topology:         { showUnassigned: true, refreshSecs: 30 },
+    businessServices: [],
+    visibility: {
+      phases: {
+        switchover: cfg.visibility?.phases?.switchover ?? true,
+        switchback: cfg.visibility?.phases?.switchback ?? true,
+        readiness:  cfg.visibility?.phases?.readiness  ?? true,
+        failover:   cfg.visibility?.phases?.failover   ?? true,
+        failback:   cfg.visibility?.phases?.failback   ?? true,
+      },
+      topology:          cfg.visibility?.topology          ?? true,
+      timelineFilter:    cfg.visibility?.timelineFilter    ?? true,
+      agentConnectivity: cfg.visibility?.agentConnectivity ?? true,
+    },
+    readiness: {
+      groupBy: cfg.readiness?.groupBy || 'Criticality',
+    },
+    appMeta: cfg.appMeta ?? {},
+  }
 }
+
+export const DEFAULT_SETTINGS = buildDefaults()
 
 function loadSettings() {
   try {

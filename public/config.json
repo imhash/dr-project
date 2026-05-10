@@ -1,35 +1,100 @@
 {
-  "_readme": "Edit this file to configure the dashboard. It is NOT bundled — safe to update without rebuilding.",
+  "_readme": "Edit this file to configure the dashboard per deployment. It is NOT bundled — safe to update without rebuilding.",
 
+  "_section_api": "── Control-M API ──────────────────────────────────────────────────────────",
   "ctmApiBase":        "/ctm-api",
   "ctmServer":         "PROD",
   "useMock":           false,
   "refreshIntervalMs": 30000,
-  "customerName":      "",
+  "_proxyNote": "Your web server must proxy /ctm-api/* → https://<your-ctm-host>/automation-api/*",
 
-  "_jobsLimitNote": "Omit jobsLimit (recommended) to let the API use its own default. Set only if you need an explicit cap — values above 1000 can trigger a CTM SaaS 500 error.",
+  "_section_branding": "── Branding ───────────────────────────────────────────────────────────────",
+  "customerName": "",
+  "_customerNameNote": "Shown in the dashboard header. Leave blank for the default 'Resiliency Dashboard'.",
 
-  "_proxyNote": "In production, your web server must proxy /ctm-api/* → https://<your-ctm-host>/automation-api/*  (see nginx.example.conf)",
+  "_section_localisation": "── Localisation ───────────────────────────────────────────────────────────",
+  "timezone": "UTC",
+  "_timezoneNote": "IANA timezone string. e.g. 'Asia/Dubai', 'Europe/London', 'America/New_York'",
 
-  "_appMetadataNote": "Per-application overrides for the DR report. Keys are exact CTM application names. All fields are optional — omitted fields fall back to inferred defaults.",
-  "appMetadata": {
-    "_example_AppName": {
-      "criticality":       "Critical",
-      "applicationType":   "Internal",
-      "serviceImpact":     "Full Outage"
-    },
-	"Murex": {
-      "criticality":       "Business Critical",
-      "applicationType":   "Internal",
-      "serviceImpact":     "Full Outage"
+  "_section_sla": "── SLA Targets (minutes) ──────────────────────────────────────────────────",
+  "sla": {
+    "_note": "Global defaults applied to all apps unless overridden in perApp below.",
+    "switchover": 30,
+    "switchback": 60,
+    "failover":   30,
+    "failback":   60,
+    "_perAppNote": "Per-application SLA overrides — keys must match exact CTM application names.",
+    "perApp": {
+      "Murex": {
+        "switchover": 20,
+        "switchback": 45,
+        "failover":   20,
+        "failback":   45
+      },
+      "SAP": {
+        "switchover": 45,
+        "switchback": 90,
+        "failover":   45,
+        "failback":   90
+      }
     }
   },
 
+  "_section_visibility": "── Dashboard Visibility ───────────────────────────────────────────────────",
+  "visibility": {
+    "phases": {
+      "switchover": true,
+      "switchback": true,
+      "failover":   true,
+      "failback":   true,
+      "readiness":  true
+    },
+    "topology":          true,
+    "timelineFilter":    true,
+    "agentConnectivity": true
+  },
+
+  "_section_readiness": "── Readiness Page ─────────────────────────────────────────────────────────",
+  "readiness": {
+    "groupBy": "Criticality",
+    "_groupByNote": "Options: Criticality | Team | Datacenter | Type | None"
+  },
+
+  "_section_appMeta": "── Application Metadata ───────────────────────────────────────────────────",
+  "_appMetaNote": "Per-application metadata for readiness tiles and generated reports. Keys are exact CTM application names.",
+  "appMeta": {
+    "Murex": {
+      "criticality":     "Business Critical",
+      "applicationType": "Trading",
+      "serviceImpact":   "Full Outage",
+      "rpo":             "15 min",
+      "team":            "Trading Ops"
+    },
+    "SAP": {
+      "criticality":     "Critical",
+      "applicationType": "ERP",
+      "serviceImpact":   "Full Outage",
+      "rpo":             "30 min",
+      "team":            "ERP Team"
+    },
+    "Oracle": {
+      "criticality":     "High",
+      "applicationType": "Database",
+      "serviceImpact":   "Degraded",
+      "rpo":             "30 min",
+      "team":            "DBA Team"
+    }
+  },
+
+  "_section_appMetaDefaults": "── App Metadata Defaults (fallback for unlisted apps) ─────────────────────",
   "_appMetadataDefaults": {
-    "_note":             "Defaults applied when an app is not listed in appMetadata above.",
     "criticality":       "inferred",
     "applicationType":   "Internal",
     "serviceImpact":     "Full Outage",
     "readinessImpact":   "Read Only"
-  }
+  },
+
+  "_section_jobs": "── Jobs ───────────────────────────────────────────────────────────────────",
+  "_jobsLimitNote": "Omit jobsLimit to use the API default. Values above 1000 can trigger a CTM SaaS 500 error.",
+  "jobsLimit": null
 }

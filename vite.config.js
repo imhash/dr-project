@@ -21,8 +21,7 @@ import react from '@vitejs/plugin-react'
  *                         Useful for offline development / demos.
  *
  * Proxy target options:
- *   Production SaaS:  https://se-preprod-aapi.us1.controlm.com
- *   Demo environment: https://ctmawsdemoprod.vse.bmc.com
+
  *
  * The proxy rewrites:
  *   /ctm-api/<path>  →  https://<target>/automation-api/<path>
@@ -31,9 +30,7 @@ export default defineConfig(({ mode }) => {
   // Load env so we can read VITE_ vars during config resolution (optional)
   const env = loadEnv(mode, process.cwd(), '')
 
-  // Proxy target — must be set in .env (VITE_CTM_PROXY_TARGET)
   const ctmTarget = env.VITE_CTM_PROXY_TARGET
-  if (!ctmTarget) throw new Error('[vite] VITE_CTM_PROXY_TARGET is not set in .env — cannot start proxy')
 
   return {
     plugins: [react()],
@@ -41,9 +38,9 @@ export default defineConfig(({ mode }) => {
     // ── Dev server ────────────────────────────────────────────────────────────
     server: {
       port: 3000,
-      strictPort: false,   // increment port if 3000 is taken
+      strictPort: false,
 
-      proxy: {
+      proxy: !ctmTarget ? {} : {
         /**
          * /ctm-api/**  →  <ctmTarget>/automation-api/**
          *
