@@ -4,7 +4,7 @@
   "_section_api": "── Control-M API ──────────────────────────────────────────────────────────",
   "ctmApiBase":        "/ctm-api",
   "ctmServer":         "PROD",
-  "useMock":           false,
+  "useMock":           true,
   "refreshIntervalMs": 30000,
   "_proxyNote": "Your web server must proxy /ctm-api/* → https://<your-ctm-host>/automation-api/*",
 
